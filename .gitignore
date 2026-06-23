@@ -1,0 +1,19 @@
+# Local dev folders and logs
+.DS_Store
+.idea/
+.vscode/
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Agent runtime collaborations (only templates are shared, actual reports are project-specific)
+docs/agent-collab/
+docs/review/
+development-log.json
+
+# Backup files
+*.bak
+*.original.md
