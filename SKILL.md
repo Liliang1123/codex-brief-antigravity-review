@@ -17,6 +17,8 @@ Core principle: **Codex designs and reviews; external agents implement; every st
 - **Physical Deliverables**: Every step of the collaboration must be documented physically on disk: Brief, Report, and Review.
 - **Evidence-Based Gate**: Codex must rerun or independently verify the reported verification commands before granting passage to the next step.
 - **External Agent Boundary**: Do not substitute Antigravity CLI with Codex multi-agents when the user explicitly requested external-agent implementation.
+- **Executor Ownership Clarity**: Every next-step recommendation MUST explicitly name who executes each part: Codex, external agent (for example Antigravity CLI), or the user. Avoid ambiguous wording such as “we should continue” when responsibility matters.
+- **Default External Execution**: Once the user chooses the Codex-design / external-agent-execution collaboration mode, complex implementation, code changes, E2E evidence collection, and heavy local runs default to the external agent. Codex owns Briefs, Reviews, verification spot-checks, gate decisions, and final guidance unless the user explicitly switches modes.
 
 ---
 
@@ -142,6 +144,7 @@ Every Codex Review must include:
 - Independent verification records.
 - Residual risks.
 - Next-step permission: yes/no and constraints.
+- Next-step execution ownership: explicitly state which tasks belong to Codex, the external agent, and the user.
 
 Codex must not approve a step solely because the external agent claims success. Verification evidence comes before approval.
 
