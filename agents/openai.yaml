@@ -1,3 +1,4 @@
+# Reference only: UI metadata for skill lists; not consumed as runtime governance.
 display_name: Codex Brief / Antigravity Review
 short_description: Project-level AI collaboration gate. Coordinate Codex planning and review with Antigravity CLI implementation.
 default_prompt: Use Codex to write step briefs, dispatch Antigravity CLI for implementation, then review reports and gate progress.

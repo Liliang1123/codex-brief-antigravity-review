@@ -61,12 +61,34 @@ def main():
         "brief-template.md",
         "report-template.md",
         "review-template.md",
-        "agy-dispatch-template.md"
+        "agy-dispatch-template.md",
+        "timeout-audit-template.md"
     ]
     for tmpl in required_templates:
         tmpl_path = os.path.join(project_dir, "references", tmpl)
         if not check_file_exists(tmpl_path):
             sys.exit(1)
+
+    # 4. Check specific contents in timeout-audit-template.md
+    timeout_path = os.path.join(project_dir, "references", "timeout-audit-template.md")
+    try:
+        with open(timeout_path, "r", encoding="utf-8") as f:
+            timeout_content = f.read()
+        required_sections = [
+            "文档类型：Timeout Audit",
+            "## 结论",
+            "## Review 范围",
+            "## 验证记录",
+            "## 后续门禁"
+        ]
+        for sec in required_sections:
+            if sec not in timeout_content:
+                print(f"[-] Error: timeout-audit-template.md is missing required section '{sec}'")
+                sys.exit(1)
+        print("[+] timeout-audit-template.md content validated.")
+    except Exception as e:
+        print(f"[-] Error checking timeout-audit-template.md contents: {e}")
+        sys.exit(1)
 
     print("\n[✓] Validation Succeeded: The skill structure is fully complete and compliant!")
 

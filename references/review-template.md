@@ -25,11 +25,21 @@
 
 ## 验证记录
 
+Critical commands from Brief（必须全部重跑，或写明无法运行的阻塞原因）：
+
 ```bash
-<command>
+<critical command>
 ```
 
-结果：<pass/fail>
+结果：<pass/fail/blocking reason>
+
+Supporting / spot-check commands（至少抽查一项或检查对应行为）：
+
+```bash
+<supporting command or behavior check>
+```
+
+结果：<pass/fail/not applicable>
 
 ## 最终建议
 
@@ -37,4 +47,7 @@
 
 ## 后续门禁
 
-<next step rules>
+- Next-step permission: yes/no
+- 若结论为 `有风险`，必须同时满足：风险不触及 OpenSpec-required categories；每个风险有后续验证步骤；下一步约束已明确。
+- Next-step execution ownership: Codex / external agent / user
+- Timeout audit required before redispatch: yes/no
