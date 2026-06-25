@@ -1,53 +1,113 @@
-# <change-id> Step <NN> Review
+# Review Result: PASS / FAIL / BLOCKED
 
 文档类型：Review
 日志及版本：YYYY-MM-DD v1
 
-## 结论
+## Summary
 
-通过 / 有风险 / 需修改
+一句话结论。必须说明是完整通过、执行失败，还是证据/依赖阻塞。
 
-## Review 范围
+## Review Scope
 
-- [Brief](file:///absolute/path)
-- [Report](file:///absolute/path)
-- [Changed file](file:///absolute/path)
+- Brief：`file:///absolute/path`
+- Report：`file:///absolute/path`
+- Changed files：`file:///absolute/path`
+- Raw artifacts：`file:///absolute/path`
+- Summary artifacts：`file:///absolute/path`
 
-## 主要发现
+## Findings
 
-### 阻塞问题
+按严重程度列问题：
 
-- <issue>
+### Critical
 
-### 已通过项
+- <scope violation / missing critical evidence / real regression failure / destructive git operation>
 
-- <item>
+### Major
 
-## 验证记录
+- <incomplete evidence / weak artifact / unclear acceptance boundary>
 
-Critical commands from Brief（必须全部重跑，或写明无法运行的阻塞原因）：
+### Minor
+
+- <non-blocking issue>
+
+## 1. Brief 遵守情况
+
+| 检查项 | 结果 | 证据 |
+|---|---|---|
+| 只改允许文件 | PASS/FAIL/BLOCKED | <path/status> |
+| 未触碰禁止范围 | PASS/FAIL/BLOCKED | <negative search/status> |
+| 生成 report/abort | PASS/FAIL/BLOCKED | <path> |
+| 保留 worktree 状态 | PASS/FAIL/BLOCKED | <git status> |
+
+## 2. Git 状态检查
 
 ```bash
-<critical command>
+git status --short
 ```
 
 结果：<pass/fail/blocking reason>
 
-Supporting / spot-check commands（至少抽查一项或检查对应行为）：
+- staged 改动：无 / 有，说明：<details>
+- unstaged 改动：无 / 有，说明：<details>
+- untracked 文件：无 / 有，说明：<details>
+- 范围外改动：无 / 有，说明：<details>
+
+## 3. 验证命令核查
+
+| Brief 要求命令 | Report 是否执行 | Codex 是否复核 | 结果 | 证据 |
+|---|---:|---:|---|---|
+| `<command>` | 是/否 | 是/否/无法 | PASS/FAIL/BLOCKED | `<path/output>` |
+
+规则：Brief 要求的 critical 命令未执行或无证据时，Final Decision 必须是 `BLOCKED`。
+
+## 4. 业务验收核查
+
+| 验收层级 | Brief 是否要求 | Report 证据 | Codex 复核 | 结论 |
+|---|---:|---|---|---|
+| 单元测试 | 是/否 | <path/output> | <result> | PASS/FAIL/BLOCKED |
+| 管线测试 | 是/否 | <path/output> | <result> | PASS/FAIL/BLOCKED |
+| server / API / `/chat` 回归 | 是/否 | <raw/summary/log> | <result> | PASS/FAIL/BLOCKED |
+| 真实业务问题 | 是/否 | <assertions> | <result> | PASS/FAIL/BLOCKED |
+
+规则：如果 Brief 要求 server/API/真实业务回归，而 Report 只有 pytest 证据，Final Decision 必须是 `BLOCKED`。
+
+## 5. 子问题覆盖矩阵
+
+| 子问题 | 当前是否覆盖 | 验证方式 | 结果 | 是否允许泛化 |
+|---|---:|---|---|---:|
+| <子问题 A> | 是/否 | <artifact/assertion> | PASS/FAIL/BLOCKED | 否 |
+
+## Required Fixes
+
+- <必须修复或补充的事项>
+
+## Verification
+
+列出 Codex 已复核命令和结果：
 
 ```bash
-<supporting command or behavior check>
+<command>
 ```
 
-结果：<pass/fail/not applicable>
+结果：PASS / FAIL / BLOCKED
 
-## 最终建议
+## Decision Rules Applied
 
-<next action>
+- 有任何越界修改：`FAIL`
+- 有破坏 worktree / 未授权 git 操作：`FAIL`
+- 有关键验证缺失：`BLOCKED`
+- Brief 要求 server/API/business-chain 回归但未跑完整：`BLOCKED`
+- 外部依赖不可用、LLM/API 502、server 无法启动导致无法判断：`BLOCKED`
+- 真实回归失败：`FAIL`
+- 所有 Brief 要求满足且业务验收通过：`PASS`
 
-## 后续门禁
+## Final Decision
+
+PASS / FAIL / BLOCKED
+
+## Next Step
 
 - Next-step permission: yes/no
-- 若结论为 `有风险`，必须同时满足：风险不触及 OpenSpec-required categories；每个风险有后续验证步骤；下一步约束已明确。
-- Next-step execution ownership: Codex / external agent / user
-- Timeout audit required before redispatch: yes/no
+- Next-step owner: Codex / external agent / user
+- Required next action: <brief/report/fix/user decision>
