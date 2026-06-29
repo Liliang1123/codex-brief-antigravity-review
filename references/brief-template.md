@@ -13,6 +13,28 @@
 
 <只描述本步骤要完成的目标，禁止扩展范围。明确本步骤是修复、验证、调查还是只产出报告。>
 
+## 2.1 Handoff Contract
+
+必须嵌入或引用唯一 marker block：
+
+```text
+<!-- COOP_HANDOFF_CONTRACT_START -->
+... YAML contract ...
+<!-- COOP_HANDOFF_CONTRACT_END -->
+```
+
+若 Contract 缺失、重复、过期、矛盾或不可解析，本 Brief 不得继续，必须交回 `openspec-superpower-change` 或用户。
+
+不可覆写字段：`mode`、`approval_status`、`risk_profile`。
+
+## 2.2 Evidence Profile
+
+Profile：compact / standard / strict
+
+- compact：仅保留必要目标、allow-list、验证命令、报告路径和阻塞条件。
+- standard：必须包含函数级地图、数据合同、不变量、错误矩阵、TDD RED/GREEN、生产 wiring、业务验收层和 step-critical。
+- strict：必须保留安全/API/schema/迁移/回滚/真实业务链证据；mock 或单测不得替代明确要求的真实验收。
+
 ## 3. 允许修改的文件
 
 只允许修改：
@@ -63,6 +85,34 @@
 
 > 不得把某个子问题的局部修复泛化为整个业务问题已修复。
 
+## 8.1 Standard / Strict 实现细节
+
+### 函数级变更地图
+
+| 文件 | 函数/类型 | 当前行为 | 目标行为 | 调用方/消费者 |
+|---|---|---|---|---|
+| `<path>` | `<symbol>` | <fact> | <target> | `<caller>` |
+
+### 数据合同
+
+| 字段 | 类型 | 可选性 | 默认值 | 生产者 | 消费者 |
+|---|---|---:|---|---|---|
+| `<field>` | `<type>` | 是/否 | `<value>` | `<producer>` | `<consumer>` |
+
+### 不变量与错误矩阵
+
+| 不变量 / 失败点 | 预期 | 是否阻断 | 必须证据 |
+|---|---|---:|---|
+| <invariant or failure> | <expected> | 是/否 | `<artifact>` |
+
+### TDD 与生产 wiring
+
+- RED 测试名称：
+- 当前实现为什么必须失败：
+- GREEN 最小实现路径：
+- 生产数据入口到最终消费者路径：
+- 不允许测试通过但生产 wiring 未接入。
+
 ## 9. 必须执行的验证命令
 
 Critical commands（Codex Review 必须重跑或给出阻塞说明）：
@@ -105,6 +155,7 @@ Supporting commands（执行者必须运行；Codex Review 至少抽查一项或
 - 不得声称 `PASS`。
 - 必须生成 `<NN>-report-abort.md` 或在 report 结论写 `BLOCKED`。
 - 必须写清楚阻塞命令、错误、已完成操作、raw 输出路径、下一步需要 Codex / 用户 / 外部服务做什么。
+- 缺少 Handoff Contract、只读字段被改写、`current_batch > planned_batches`、或 `step_critical` / `final_critical` 混用时，必须 BLOCKED。
 
 ## 13. 质量门禁
 

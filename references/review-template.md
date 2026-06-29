@@ -39,6 +39,8 @@
 | 未触碰禁止范围 | PASS/FAIL/BLOCKED | <negative search/status> |
 | 生成 report/abort | PASS/FAIL/BLOCKED | <path> |
 | 保留 worktree 状态 | PASS/FAIL/BLOCKED | <git status> |
+| Handoff Contract 唯一且可解析 | PASS/FAIL/BLOCKED | <marker/schema check> |
+| readonly fields 未被外部 Agent 改写 | PASS/FAIL/BLOCKED | `mode` / `approval_status` / `risk_profile` |
 
 ## 2. Git 状态检查
 
@@ -71,6 +73,18 @@ git status --short
 | 真实业务问题 | 是/否 | <assertions> | <result> | PASS/FAIL/BLOCKED |
 
 规则：如果 Brief 要求 server/API/真实业务回归，而 Report 只有 pytest 证据，Final Decision 必须是 `BLOCKED`。
+规则：如果真实回归仍复现问题，Final Decision 必须是 `FAIL`。
+规则：如果外部依赖不可用导致无法判断业务修复，Final Decision 必须是 `BLOCKED`。
+
+## 4.1 Contract Consensus
+
+| 字段 | Brief | Report/Status | 结论 |
+|---|---|---|---|
+| `change_id` | `<value>` | `<value>` | PASS/FAIL/BLOCKED |
+| `risk_profile` | compact/standard/strict | compact/standard/strict | PASS/FAIL/BLOCKED |
+| `current_batch` | `<n>` | `<n>` | PASS/FAIL/BLOCKED |
+| `next_owner` | `<owner>` | `<owner>` | PASS/FAIL/BLOCKED |
+| `verification_strategy` | `<summary>` | `<summary>` | PASS/FAIL/BLOCKED |
 
 ## 5. 子问题覆盖矩阵
 
@@ -100,6 +114,7 @@ git status --short
 - Brief 要求 server/API/business-chain 回归但未跑完整：`BLOCKED`
 - 外部依赖不可用、LLM/API 502、server 无法启动导致无法判断：`BLOCKED`
 - 真实回归失败：`FAIL`
+- Handoff Contract 缺失、重复、不可解析或 readonly fields 被改写：`BLOCKED`
 - 所有 Brief 要求满足且业务验收通过：`PASS`
 
 ## Final Decision

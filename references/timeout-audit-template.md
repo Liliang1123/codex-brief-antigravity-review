@@ -43,3 +43,5 @@
 - 若 yes：<说明 redispatch 条件，例如是否需要修改 Brief、是否需要清理部分改动>
 - 若 no：<说明阻塞原因和需要用户或 Codex 做的决策>
 - Timeout audit required before redispatch: yes
+- Handoff Contract status: present / missing / duplicated / unparsable
+- Next owner: Codex / external agent / user

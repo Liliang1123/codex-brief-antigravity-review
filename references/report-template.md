@@ -51,6 +51,17 @@ git diff --stat
 
 ## Evidence
 
+### Handoff Contract Fingerprint
+
+| 字段 | 值 |
+|---|---|
+| Contract marker count | <start/end count> |
+| `change_id` | `<value>` |
+| `risk_profile` | compact / standard / strict |
+| `batch_profile` | single / cohesive / staged |
+| `current_batch` / `planned_batches` | `<n>/<n>` |
+| readonly fields changed | no / yes |
+
 ### Commands
 
 | 命令 | 级别 | 退出码 | 结果摘要 | 原始输出/日志路径 |
@@ -107,6 +118,8 @@ git diff --stat
 | 真实业务问题 | 是/否 | PASS/FAIL/BLOCKED | `<path>` | <details> |
 
 > 如果 Brief 要求 server/API/真实业务回归但本报告未完成，则本报告结论必须是 `BLOCKED`，不得写 `PASS`。
+> 如果真实业务回归已执行且仍复现原问题，则本报告结论必须是 `FAIL`。
+> 如果外部依赖不可用导致无法判断业务修复，则本报告结论必须是 `BLOCKED`。
 
 ## 子问题覆盖矩阵
 
