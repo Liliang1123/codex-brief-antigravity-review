@@ -1,88 +1,152 @@
 # codex-brief-antigravity-review
 
-A reusable Codex Skill for decoupling planning, task dispatching, and quality review from direct implementation execution.
+[English](README.md) | [简体中文](README_cn.md)
 
-[English](#english) | [中文说明](#中文说明)
+`codex-brief-antigravity-review` is a Codex skill for coordinating external-agent implementation with structured briefs, execution reports, independent reviews, and evidence gates.
 
----
+It is intended for workflows where Codex should design, dispatch, and audit work, while a separate execution agent such as Antigravity CLI performs implementation under explicit file, command, and reporting boundaries.
 
-## English
+## Highlights
 
-`codex-brief-antigravity-review` is a governance and orchestration framework designed for AI-assisted software engineering. 
+- Converts approved implementation plans into batch-level briefs.
+- Separates orchestration and review from implementation execution.
+- Requires structured reports or abort reports from the external agent.
+- Audits evidence before writing PASS, FAIL, or BLOCKED.
+- Prevents false PASS claims when critical proof is missing.
+- Maintains a shared Handoff Contract for batch status and promotion control.
 
-### Why Decouple Planning from Execution?
+## Why It Exists
 
-In complex or legacy codebases, allowing a single AI agent to plan, execute, and verify its own code often leads to context explosion, uncontrolled git modifications, and cumulative regression bugs. 
+Long implementation sessions are risky when a single agent owns every step. Common failure modes include:
 
-This skill enforces a strict **Decoupled Architecture**:
-1. **Codex (Orchestrator)**: Focuses on interpreting OpenSpec plans, writing structured task briefs, and performing rigorous code reviews. It is restricted from direct file edits.
-2. **Antigravity CLI / agy (Executor)**: Runs locally under strict file boundaries to implement the brief, test changes, and generate structured reports.
+- context overload and missed constraints;
+- unclear planner/executor responsibility;
+- missing raw evidence behind success claims;
+- broad file edits outside the intended batch;
+- skipped reruns of critical commands;
+- advancing the next batch before the previous one is proven.
 
+This skill creates a strict Brief -> Dispatch -> Report -> Review loop.
+
+## Role Boundary
+
+| Role | Responsibility |
+|---|---|
+| Codex | Reads the approved plan, writes briefs, dispatches the external agent, audits reports, reruns critical evidence where possible, and writes PASS / FAIL / BLOCKED reviews. |
+| External agent | Implements only the allowed scope, obeys forbidden files and abort rules, runs required checks, and writes a report. |
+| Handoff Contract | Holds shared state: mode, approval status, risk profile, current batch, evidence profile, and promotion rules. |
+| openspec-superpower-change | Owns request routing, OpenSpec approval status, risk profile, and implementation authorization before this skill takes over. |
+
+Codex must not re-decide OpenSpec approval or risk classification while this skill is active.
+
+## Workflow
+
+```text
+Read Handoff Contract
+-> read approved plan section for the current batch
+-> write <NN>-brief.md
+-> dispatch external agent
+-> require <NN>-report.md or <NN>-report-abort.md
+-> audit report claims against evidence
+-> rerun critical checks where possible
+-> write step review: PASS / FAIL / BLOCKED
+-> advance only after PASS
 ```
-+------------------+                   +--------------------+
-|  Codex (Planner) | --[Step Brief]--> |  Antigravity CLI   |
-|                  |                   |    (Executor)      |
-|  [Gatekeeper]    | <--[Step Report]- |                    |
-+------------------+                   +--------------------+
-         |
-  [Runs Verification]
-         |
-  [Writes Step Review] ---> (Pass / Need Fix)
+
+## Artifact Layout
+
+| Artifact | Path |
+|---|---|
+| Brief | `docs/agent-collab/<change-id>/<NN>-brief.md` |
+| Report | `docs/agent-collab/<change-id>/<NN>-report.md` |
+| Abort Report | `docs/agent-collab/<change-id>/<NN>-report-abort.md` |
+| Status / Handoff Contract | `docs/agent-collab/<change-id>/status.md` |
+| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-review.md` |
+| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-timeout-audit.md` |
+
+## Evidence Profiles
+
+| Profile | Typical Use |
+|---|---|
+| compact | Low-risk batches with focused commands and concise reports. |
+| standard | Default implementation batches with function maps, data contracts, invariants, error matrices, RED/GREEN evidence, and business acceptance layers. |
+| strict | Security, auth, permission, public API/schema, persistence, migration, deployment, rollback, or cross-tenant changes. |
+
+## Repository Structure
+
+```text
+.
+├── SKILL.md
+├── agents/
+│   └── openai.yaml
+├── references/
+│   ├── brief-template.md
+│   ├── report-template.md
+│   ├── review-template.md
+│   ├── agy-dispatch-template.md
+│   ├── timeout-audit-template.md
+│   └── handoff-contract.md
+└── scripts/
+    └── validate_templates.py
 ```
 
-### Installation
+## Key References
 
-To install this skill locally, clone it and link or copy it to your Codex configuration folder:
+- `references/brief-template.md`: required brief sections and evidence expectations.
+- `references/report-template.md`: external-agent implementation report format.
+- `references/review-template.md`: PASS / FAIL / BLOCKED review contract.
+- `references/agy-dispatch-template.md`: dispatch prompt and command structure.
+- `references/timeout-audit-template.md`: timeout and missing-report audit format.
+- `references/handoff-contract.md`: shared status contract between Codex and the external agent.
+
+## Key Rules
+
+- Every brief must list allowed files, forbidden files, abort conditions, report path, and critical evidence.
+- External agents must not overwrite Handoff Contract fields owned by the router.
+- Missing reports, missing critical evidence, missing raw artifacts, or unreachable dependencies are `BLOCKED`.
+- Forbidden-scope edits, destructive git operations, or still-reproducing regressions are `FAIL`.
+- Unit tests alone do not prove API, server, or real business success unless those layers are explicitly not applicable.
+- Only `PASS` may advance the batch pointer or authorize the next brief.
+
+## Installation
+
+Copy or link this skill into your Codex skills directory:
 
 ```bash
-mkdir -p ~/.codex/skills
-ln -s "/path/to/codex-brief-antigravity-review" ~/.codex/skills/codex-brief-antigravity-review
+mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
+cp -R codex-brief-antigravity-review "${CODEX_HOME:-$HOME/.codex}/skills/codex-brief-antigravity-review"
 ```
 
-### File Structure
+## Validation
 
-- `SKILL.md`: Core routing, boundaries, and hard constraints.
-- `agents/openai.yaml`: UI metadata for agent integration.
-- `references/`:
-  - `brief-template.md`: Template for defining step scopes, allowlists, blocklists, and verification steps.
-  - `report-template.md`: Template for execution results, deviations, and residual risks.
-  - `review-template.md`: Template for step approval and local verification gates.
-  - `agy-dispatch-template.md`: Template for the command used to invoke `agy`.
-
----
-
-## 中文说明
-
-`codex-brief-antigravity-review` 是为 AI 辅助软件工程设计的轻量级治理与协作流框架。
-
-### 为什么将“规划评审”与“代码实施”分离？
-
-在大型或复杂的现有代码库中，如果让同一个大模型同时负责方案规划、代码修改以及自我审查，往往容易导致以下问题：
-1. **上下文过载**：因阅读大量代码及日志导致推理能力下降。
-2. **代码失控**：Agent 擅自进行大范围无序的修改或未授权的 `git` 操作。
-3. **缺乏客观审计**：自我审查容易遗漏边界缺陷。
-
-本项目通过固化 **规划（Codex）与实施（Antigravity CLI）分离** 的协作流来解决这一痛点：
-- **Codex (协调与门禁)**：只负责解析计划、编写单步 Brief、派发指令、运行本地二次重测以及编写 Review 报告。**禁止直接编辑业务代码**。
-- **Antigravity CLI / agy (执行器)**：在被明确限制的目录和文件沙箱内，执行具体代码修改，跑通测试，并回传结构化执行报告。
-
-### 工作流步骤
-
-1. **出 Brief**：Codex 依据 OpenSpec 和 Plan，生成 `docs/agent-collab/<change-id>/<NN>-brief.md`。
-2. **派发任务**：Codex 生成带有路径和边界约束的 `agy` 调度指令。
-3. **回收 Report**：Antigravity CLI 完成任务，并写回报告 `docs/agent-collab/<change-id>/<NN>-report.md`。
-4. **验证与 Review**：Codex 在本地复现验证，并在 `docs/review/` 下输出评审结果。
-5. **放行或返工**：根据结论（`通过` / `需修改`），决定是进入下一阶段还是触发修复循环。
-
-### 本地安装
+Run validation after editing the skill:
 
 ```bash
-mkdir -p ~/.codex/skills
-ln -s "/Users/elvis/file/develop/opensource/codex-brief-antigravity-review" ~/.codex/skills/codex-brief-antigravity-review
+python3 /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
+python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
 ```
 
----
+## Example Prompts
+
+```text
+Use codex-brief-antigravity-review to write the next implementation brief from the approved plan. Do not edit implementation files.
+```
+
+```text
+Use codex-brief-antigravity-review to audit the latest external-agent report, rerun critical evidence where possible, and write a PASS / FAIL / BLOCKED review.
+```
+
+```text
+Use codex-brief-antigravity-review to resume shared status and determine whether the next batch may start.
+```
+
+## Maintenance Notes
+
+- This skill consumes routing and approval decisions from `openspec-superpower-change`.
+- Do not use Codex subagents as a substitute for the named external agent when external implementation was requested.
+- Do not treat a report as proof; audit the evidence and rerun critical checks where possible.
+- Do not advance shared status unless the review result is PASS.
 
 ## License
 
-This project is open-sourced under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE).
