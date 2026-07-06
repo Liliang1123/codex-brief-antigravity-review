@@ -1,6 +1,6 @@
 ---
 name: codex-brief-antigravity-review
-description: "Use when coordinating or auditing implementation through an external agent, writing batch briefs, dispatching Antigravity CLI, reviewing reports, resuming shared status, or preventing false PASS claims from incomplete evidence."
+description: "Use when coordinating external-agent implementation, writing or breaking down implementation/task/step/batch briefs, dispatching Antigravity CLI, auditing reports or reviews, resuming shared status, or checking PASS evidence; also trigger on 实施 Brief、任务拆解、外部 Agent 实施、Codex Review、Report 审计."
 ---
 
 # Codex Brief & Antigravity Review Gate

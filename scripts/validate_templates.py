@@ -165,7 +165,19 @@ def main():
     try:
         with open(openai_yaml, "r", encoding="utf-8") as f:
             meta = yaml_load(f.read())
-            print(f"[+] agents/openai.yaml validated. Display Name: {meta.get('display_name')}")
+            interface = meta.get("interface") if isinstance(meta, dict) else None
+            if not isinstance(interface, dict):
+                raise AssertionError("missing interface mapping")
+            required_interface = {"display_name", "short_description", "default_prompt"}
+            missing_interface = sorted(required_interface - set(interface))
+            if missing_interface:
+                raise AssertionError(f"missing interface fields: {missing_interface}")
+            if "$codex-brief-antigravity-review" not in str(interface["default_prompt"]):
+                raise AssertionError("default_prompt must explicitly mention the skill")
+            policy = meta.get("policy", {})
+            if policy.get("allow_implicit_invocation", True) is not True:
+                raise AssertionError("implicit invocation must remain enabled")
+            print(f"[+] agents/openai.yaml validated. Display Name: {interface['display_name']}")
     except Exception as e:
         print(f"[-] Error parsing agents/openai.yaml: {e}")
         sys.exit(1)
