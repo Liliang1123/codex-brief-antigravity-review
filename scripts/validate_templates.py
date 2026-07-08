@@ -178,6 +178,13 @@ def main():
             if policy.get("allow_implicit_invocation", True) is not True:
                 raise AssertionError("implicit invocation must remain enabled")
             print(f"[+] agents/openai.yaml validated. Display Name: {interface['display_name']}")
+            for required_text in [
+                "temporary structured backup",
+                "remove temporary backups",
+                "Long-term history is managed",
+            ]:
+                if required_text not in content:
+                    raise AssertionError(f"SKILL.md missing backup lifecycle text: {required_text}")
     except Exception as e:
         print(f"[-] Error parsing agents/openai.yaml: {e}")
         sys.exit(1)
@@ -232,6 +239,8 @@ def main():
             "## 11. Key Assertions",
             "## 12. 阻塞处理",
             "pytest 通过不能替代业务链路通过",
+            "备份仅用于失败回滚",
+            "历史版本通过 `/Users/elvis/file/develop/opensource/openspec-superpower-change`",
         ],
         "report-template.md": [
             "PASS / FAIL / BLOCKED",

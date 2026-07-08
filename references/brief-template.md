@@ -66,8 +66,12 @@ Profile：compact / standard / strict
 
 ### 备份要求（若允许修改 skill / 模板，必须创建结构化备份）
 
-- 备份目录：`/Users/elvis/.codex/skills-backups/<backup-dir-name>/`
+- 临时备份目录：`/private/tmp/<backup-dir-name>/`（或 Brief 明确授权的位置）。
 - 结构规范：备份必须保留相对路径结构（例如 `codex-brief-antigravity-review/SKILL.md`），禁止使用扁平列表备份，以防回滚歧义。
+- 备份仅用于失败回滚，不作为历史版本。
+- 完成测试、验证和归档同步后必须删除临时备份、`.bak.*` 文件和 `/Users/elvis/.codex/skills/` 下可被发现的 `*.backup*` skill 目录。
+- 历史版本通过 `/Users/elvis/file/develop/opensource/openspec-superpower-change` 和 `/Users/elvis/file/develop/opensource/codex-brief-antigravity-review` 的 git history 管理。
+- 若验证失败或需要回滚，临时备份只保留到回滚/用户决策完成。
 
 ## 7. 需求来源
 

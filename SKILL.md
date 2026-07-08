@@ -93,5 +93,9 @@ user. Do not invent a new mode, approval status, or risk profile.
 
 When changing this skill, read `SKILL.md`, preserve the Brief -> Dispatch ->
 Report -> Review loop, update templates and validator together, create a
-structured backup, validate `scripts/validate_templates.py`, and do not push or
-run prohibited git commands without explicit user approval.
+temporary structured backup before editing, validate `scripts/validate_templates.py`,
+then remove temporary backups and `.bak.*` files after validation passes.
+Long-term history is managed by
+`/Users/elvis/file/develop/opensource/codex-brief-antigravity-review`; never
+leave backup copies under `/Users/elvis/.codex/skills/`, and do not push or run
+prohibited git commands without explicit user approval.
