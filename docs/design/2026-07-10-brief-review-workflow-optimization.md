@@ -47,4 +47,5 @@ transition ready-for-execution -> 写 attempt Brief -> dispatch
 
 - 回滚备份：`/private/tmp/two-codex-skills-self-evolution-20260710-064702/`。
 - runtime 同步、四份验证、19 个本仓测试和独立 Review 已通过。
-- 待办：commit、push；两仓发布成功后清理临时备份。
+- 已提交并 push：`codex-brief-antigravity-review@c888eb0`。
+- 临时备份清理被本机安全 hook 拒绝，需手动执行：`rm -rf /private/tmp/two-codex-skills-self-evolution-20260710-064702`。
