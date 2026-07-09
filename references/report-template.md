@@ -1,10 +1,15 @@
-# <change-id> Step <NN> 执行报告
+# <change-id> Step <NN> Attempt <AA> 执行报告
+
+文档类型：Execution Report
+日志及版本：YYYY-MM-DD v1
 
 ## 结论
 
 PASS / FAIL / BLOCKED
 
 一句话依据：<不能只写“测试通过”；必须说明达到或未达到哪一层验收。>
+
+> Report 的 `PASS` 只是执行者建议，不能推进批次或声明任务完成；必须经过 Codex Review。
 
 ## 修改文件列表
 
@@ -56,10 +61,13 @@ git diff --stat
 | 字段 | 值 |
 |---|---|
 | Contract marker count | <start/end count> |
+| Canonical status path | `docs/agent-collab/<change-id>/status.md` |
+| `schema_version` / `contract_revision` | `2` / `<n>` |
 | `change_id` | `<value>` |
 | `risk_profile` | compact / standard / strict |
 | `batch_profile` | single / cohesive / staged |
 | `current_batch` / `planned_batches` | `<n>/<n>` |
+| `attempt` / `lifecycle_state` | `<AA>` / `<state>` |
 | readonly fields changed | no / yes |
 
 ### Commands
@@ -136,6 +144,16 @@ git diff --stat
 ## 是否偏离 Brief
 
 无偏离 / 有偏离：<说明偏离原因及影响>
+
+## 建议状态
+
+- Suggested Review result: PASS / FAIL / BLOCKED
+- Suggested next state: ready-for-review / blocked
+- `blocked_reason`: none / <reason>
+- `blocker_owner`: none / <owner>
+- `resume_condition`: none / <condition>
+
+外部 Agent 不得直接编辑 canonical `status.md`。
 
 ## BLOCKED / FAIL 项
 

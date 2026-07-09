@@ -2,18 +2,19 @@
 
 [English](README.md) | [简体中文](README_cn.md)
 
-`codex-brief-antigravity-review` 是一个 Codex Skill，用于通过结构化 Brief、执行 Report、独立 Review 和证据门禁来协调外部 Agent 实施。
-
-它适用于这样的工作流：Codex 负责设计、派发和审计，另一个执行 Agent（例如 Antigravity CLI）在明确的文件、命令和报告边界内完成实现。
+`codex-brief-antigravity-review` 是一个用于编写 Antigravity/Codex 任务提示并复核 diff、Report 和证据的 Codex Skill。独立提示词/只读 Review 保持轻量；只有 `openspec-superpower-change` 已完成交接后，才进入结构化外部执行治理。
 
 ## 亮点
 
-- 将已批准的实施计划转化为批次级 Brief。
+- 独立编写或优化 task prompt、Brief、checklist，无需 OpenSpec/Handoff。
+- 普通 diff/证据只读 Review 不伪造批次推进。
+- 将已批准实施计划转化为带 attempt 的批次 Brief。
 - 将编排与评审从具体实现执行中分离。
 - 要求外部 Agent 输出结构化 Report 或 Abort Report。
 - 在写出 PASS、FAIL 或 BLOCKED 前审计证据。
 - 防止关键证明缺失时产生虚假 PASS。
-- 使用共享 Handoff Contract 管理批次状态和推进控制。
+- `FAIL`/`BLOCKED` 保留 attempt 历史，修正/解阻后必须再 Review。
+- 只以 canonical `status.md` 保存共享状态，最终批次 PASS 回交总入口验证。
 
 ## 为什么需要它
 
@@ -32,37 +33,42 @@
 
 | 角色 | 职责 |
 |---|---|
-| Codex | 读取已批准计划，编写 Brief，派发外部 Agent，审计 Report，在可行时复跑关键证据，并写出 PASS / FAIL / BLOCKED Review。 |
+| Codex standalone | 编写 prompt/Brief/checklist 或只读 Review diff/证据；不维护 Handoff 或推进批次。 |
+| Codex governor | 读取已批准计划，编写 attempt Brief，派发外部 Agent，审计 Report，复跑关键证据并写 Review。 |
 | 外部 Agent | 只实现允许范围，遵守禁止文件与 abort 规则，运行要求的检查，并写出 Report。 |
-| Handoff Contract | 保存 mode、approval status、risk profile、current batch、evidence profile 和 promotion rules 等共享状态。 |
+| Handoff Contract | 只在 canonical `status.md` 保存 batch、attempt、lifecycle、阻塞恢复和最终回交状态。 |
 | openspec-superpower-change | 在本 Skill 接手前，负责请求路由、OpenSpec 审批状态、风险等级和实施授权。 |
 
-该 Skill 激活时，Codex 不应重新判断 OpenSpec 审批或风险分类。
+Standalone 路径不得修改实现；handed-off 路径不得重新判断 OpenSpec 审批或风险分类。
 
 ## 工作流
 
 ```text
-读取 Handoff Contract
--> 读取当前批次的已批准计划章节
--> 写 <NN>-brief.md
+Standalone：编写/优化 prompt 或只读 Review diff/Report -> 返回结论
+
+Handed-off：读取 canonical Handoff Contract
+-> 读取当前批次/attempt 的已批准计划
+-> 写 <NN>-attempt-<AA>-brief.md
 -> 派发外部 Agent
--> 要求 <NN>-report.md 或 <NN>-report-abort.md
+-> 要求 attempt Report 或 Abort Report
 -> 根据证据审计 Report 声明
 -> 在可行时复跑关键检查
 -> 写 step review：PASS / FAIL / BLOCKED
--> 只有 PASS 后才能推进
+-> FAIL/BLOCKED：同批次新 attempt，再次 Review
+-> 非最终 PASS：下一批
+-> 最终 PASS：回交 openspec-superpower-change 做最终验证
 ```
 
 ## 产物路径
 
 | 产物 | 路径 |
 |---|---|
-| Brief | `docs/agent-collab/<change-id>/<NN>-brief.md` |
-| Report | `docs/agent-collab/<change-id>/<NN>-report.md` |
-| Abort Report | `docs/agent-collab/<change-id>/<NN>-report-abort.md` |
+| Brief | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-brief.md` |
+| Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md` |
+| Abort Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report-abort.md` |
 | Status / Handoff Contract | `docs/agent-collab/<change-id>/status.md` |
-| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-review.md` |
-| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-timeout-audit.md` |
+| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-review.md` |
+| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-timeout-audit.md` |
 
 ## 证据等级
 
@@ -86,8 +92,10 @@
 │   ├── agy-dispatch-template.md
 │   ├── timeout-audit-template.md
 │   └── handoff-contract.md
-└── scripts/
-    └── validate_templates.py
+├── scripts/
+│   └── validate_templates.py
+└── tests/
+    └── test_workflow_rules.py
 ```
 
 ## 关键参考文件
@@ -122,9 +130,12 @@ cp -R codex-brief-antigravity-review "${CODEX_HOME:-$HOME/.codex}/skills/codex-b
 修改 Skill 后运行：
 
 ```bash
-python3 /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
-python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
+"${PYTHON_BIN:-python3}" /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
+PYTHONDONTWRITEBYTECODE=1 python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /path/to/codex-brief-antigravity-review/tests -v
 ```
+
+`quick_validate.py` 需要 PyYAML；请通过 `PYTHON_BIN` 选择可用解释器。项目 validator 和测试会覆盖无 PyYAML fallback。
 
 ## 示例 Prompt
 
@@ -140,12 +151,17 @@ Use codex-brief-antigravity-review to audit the latest external-agent report, re
 Use codex-brief-antigravity-review to resume shared status and determine whether the next batch may start.
 ```
 
+```text
+Use codex-brief-antigravity-review standalone mode to improve this Antigravity task prompt. Do not create Handoff artifacts or modify project files.
+```
+
 ## 维护说明
 
-- 本 Skill 消费来自 `openspec-superpower-change` 的路由和审批决策。
+- 本 Skill 可独立处理 prompt/只读 Review；只有 handed-off 路径消费 `openspec-superpower-change` 的路由和审批决策。
 - 当用户要求外部 Agent 实施时，不得用 Codex subagent 替代指定外部 Agent。
 - 不得把 Report 当成证明；必须审计证据，并在可行时复跑关键检查。
 - 除非 Review 结果为 PASS，否则不得推进共享状态。
+- 最终批次 PASS 不等于任务完成，必须回交 `openspec-superpower-change`。
 
 ## License
 

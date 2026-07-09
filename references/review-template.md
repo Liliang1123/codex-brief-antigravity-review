@@ -2,6 +2,7 @@
 
 文档类型：Review
 日志及版本：YYYY-MM-DD v1
+批次及尝试：Step <NN> Attempt <AA>
 
 ## Summary
 
@@ -81,8 +82,12 @@ git status --short
 | 字段 | Brief | Report/Status | 结论 |
 |---|---|---|---|
 | `change_id` | `<value>` | `<value>` | PASS/FAIL/BLOCKED |
+| `schema_version` | `2` | `2` | PASS/FAIL/BLOCKED |
+| Execution revision | Brief `<n>` | Report `<n>` | PASS/FAIL/BLOCKED |
+| Review revision | expected `<n+1>` | canonical status `<n+1>` | PASS/FAIL/BLOCKED |
 | `risk_profile` | compact/standard/strict | compact/standard/strict | PASS/FAIL/BLOCKED |
 | `current_batch` | `<n>` | `<n>` | PASS/FAIL/BLOCKED |
+| `attempt` / `lifecycle_state` | `<AA>` / `<state>` | `<AA>` / `<state>` | PASS/FAIL/BLOCKED |
 | `next_owner` | `<owner>` | `<owner>` | PASS/FAIL/BLOCKED |
 | `verification_strategy` | `<summary>` | `<summary>` | PASS/FAIL/BLOCKED |
 
@@ -117,6 +122,18 @@ git status --short
 - Handoff Contract 缺失、重复、不可解析或 readonly fields 被改写：`BLOCKED`
 - 所有 Brief 要求满足且业务验收通过：`PASS`
 
+## Required State Transition
+
+- `FAIL`：保持 same batch，设置 `needs-fix`、`last_review_result: fail`，
+  `attempt + 1`，由 governor 生成新的 correction Brief。修正、验证后 must be reviewed again。
+- `BLOCKED`：保持 same batch，设置 `blocked`、`last_review_result: blocked`，
+  并填写 `blocked_reason`、`blocker_owner`、`resume_condition`。恢复后使用新 attempt、刷新证据，并 must be reviewed again。
+- 非最终 `PASS`：`current_batch + 1`、`attempt: 1`、`ready-for-brief`。
+- 最终 `PASS`：保持最终 batch，设置 `awaiting-final-verification`、
+  `final_verification: pending`、`final_review_result: pending`、
+  `next_owner: openspec-superpower-change`；不得声明任务完成。
+- 每次状态变更：`contract_revision + 1`。
+
 ## Final Decision
 
 PASS / FAIL / BLOCKED
@@ -124,5 +141,5 @@ PASS / FAIL / BLOCKED
 ## Next Step
 
 - Next-step permission: yes/no
-- Next-step owner: Codex / external agent / user
+- Next-step owner: openspec-superpower-change / codex-brief-antigravity-review / external-agent / user
 - Required next action: <brief/report/fix/user decision>

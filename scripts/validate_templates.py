@@ -1,40 +1,87 @@
 #!/usr/bin/env python3
-import os
+"""Validate brief/review templates and the shared Handoff lifecycle."""
+from __future__ import annotations
+
+import re
 import sys
+from pathlib import Path
+
 try:
     import yaml
-except ModuleNotFoundError:  # pragma: no cover - exercised when PyYAML is absent
+except ModuleNotFoundError:  # The supported subset has a dependency-free fallback.
     yaml = None
+
 
 START = "<!-- COOP_HANDOFF_CONTRACT_START -->"
 END = "<!-- COOP_HANDOFF_CONTRACT_END -->"
+SCHEMA_VERSION = 2
 RISK_PROFILES = {"compact", "standard", "strict"}
 BATCH_PROFILES = {"single", "cohesive", "staged"}
 BUSINESS_ACCEPTANCE = {"required", "optional", "not-applicable"}
 MODES = {
-    "review-only",
-    "discovery-first",
-    "openspec-proposal",
-    "approved-implementation",
-    "direct-change",
-    "self-evolution",
+    "review-only", "discovery-first", "openspec-proposal",
+    "approved-implementation", "direct-change", "self-evolution",
 }
 APPROVAL_STATUSES = {"not-required", "proposed", "approved", "blocked"}
 EXECUTORS = {"codex", "external-agent"}
-GOVERNORS = {"codex", "codex-brief-antigravity-review"}
-NEXT_OWNERS = {"codex", "codex-brief-antigravity-review", "external-agent", "user"}
+GOVERNORS = {"openspec-superpower-change", "codex-brief-antigravity-review"}
+NEXT_OWNERS = {
+    "openspec-superpower-change", "codex-brief-antigravity-review",
+    "external-agent", "user",
+}
+LIFECYCLE_STATES = {
+    "ready-for-brief", "ready-for-execution", "ready-for-review",
+    "needs-fix", "blocked", "awaiting-final-verification", "complete",
+}
+REVIEW_RESULTS = {"not-run", "pass", "fail", "blocked"}
+FINAL_VERIFICATION_RESULTS = {"pending", "pass", "fail", "blocked"}
+FINAL_REVIEW_RESULTS = {"pending", "pass", "fail", "blocked"}
+BLOCKER_OWNERS = {
+    "none", "openspec-superpower-change", "codex-brief-antigravity-review",
+    "external-agent", "user", "dependency",
+}
+ALLOWED_TRANSITIONS = {
+    "ready-for-brief": {"ready-for-execution", "blocked"},
+    "ready-for-execution": {"ready-for-review", "blocked"},
+    "ready-for-review": {
+        "needs-fix", "blocked", "ready-for-brief",
+        "awaiting-final-verification",
+    },
+    "needs-fix": {"ready-for-execution", "blocked"},
+    "blocked": {
+        "ready-for-brief", "ready-for-execution", "ready-for-review",
+        "needs-fix", "blocked",
+    },
+    "awaiting-final-verification": {"complete", "needs-fix", "blocked"},
+    "complete": set(),
+}
+IMMUTABLE_FIELDS = {
+    "schema_version", "change_id", "mode", "approval_status", "risk_profile",
+    "batch_profile", "planned_batches", "executor", "governor",
+    "step_critical", "final_critical", "business_acceptance",
+    "stop_conditions", "verification_strategy", "readonly_fields",
+}
 
-def parse_scalar(value):
+
+def parse_scalar(value: str):
     value = value.strip()
-    if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+    if (value.startswith('"') and value.endswith('"')) or (
+        value.startswith("'") and value.endswith("'")
+    ):
         return value[1:-1]
-    if value.isdigit():
+    lowered = value.lower()
+    if lowered in {"true", "false"}:
+        return lowered == "true"
+    if lowered in {"null", "~"}:
+        return None
+    if re.fullmatch(r"-?\d+", value):
         return int(value)
     return value
 
-def simple_yaml_load(text):
-    result = {}
-    current_key = None
+
+def simple_yaml_load(text: str) -> dict:
+    result: dict = {}
+    current_key: str | None = None
     for raw in text.splitlines():
         if not raw.strip() or raw.lstrip().startswith("#"):
             continue
@@ -62,19 +109,24 @@ def simple_yaml_load(text):
             result[current_key][key.strip()] = parse_scalar(value)
     return result
 
-def yaml_load(text):
-    if yaml is not None:
-        return yaml.safe_load(text)
-    return simple_yaml_load(text)
 
-def check_file_exists(filepath):
-    if not os.path.exists(filepath):
-        print(f"[-] Error: File not found -> {filepath}")
-        return False
-    print(f"[+] Found: {filepath}")
-    return True
+def yaml_load(text: str):
+    return yaml.safe_load(text) if yaml is not None else simple_yaml_load(text)
 
-def extract_handoff_contract(text, label):
+
+def read(path: Path) -> str:
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError as exc:
+        raise AssertionError(f"missing required file: {path}") from exc
+
+
+def require(text: str, needle: str, label: str) -> None:
+    if needle not in text:
+        raise AssertionError(f"{label}: missing required text: {needle!r}")
+
+
+def extract_handoff_contract(text: str, label: str) -> dict:
     if text.count(START) != 1 or text.count(END) != 1:
         raise AssertionError(f"{label}: handoff contract must have exactly one marker block")
     body = text.split(START, 1)[1].split(END, 1)[0].strip()
@@ -87,210 +139,276 @@ def extract_handoff_contract(text, label):
         raise AssertionError(f"{label}: handoff contract must be a YAML mapping")
     return data
 
-def validate_handoff_contract(data, label):
+
+def _require_positive_int(data: dict, key: str, label: str) -> None:
+    if not isinstance(data[key], int) or data[key] < 1:
+        raise AssertionError(f"{label}: {key} must be a positive integer")
+
+
+def validate_handoff_contract(data: dict, label: str) -> None:
     required = {
-        "schema_version", "change_id", "mode", "approval_status", "risk_profile",
-        "batch_profile", "current_batch", "planned_batches", "executor",
-        "governor", "next_owner", "step_critical", "final_critical",
+        "schema_version", "change_id", "mode", "approval_status",
+        "risk_profile", "batch_profile", "current_batch", "planned_batches",
+        "attempt", "contract_revision", "lifecycle_state",
+        "last_review_result", "blocked_reason", "blocker_owner",
+        "resume_condition", "final_verification", "final_review_result",
+        "executor", "governor",
+        "next_owner", "step_critical", "final_critical",
         "business_acceptance", "stop_conditions", "verification_strategy",
+        "readonly_fields",
     }
     missing = sorted(required - set(data))
     if missing:
         raise AssertionError(f"{label}: missing contract fields: {missing}")
-    if data["mode"] not in MODES:
-        raise AssertionError(f"{label}: invalid mode")
-    if data["approval_status"] not in APPROVAL_STATUSES:
-        raise AssertionError(f"{label}: invalid approval_status")
-    if data["risk_profile"] not in RISK_PROFILES:
-        raise AssertionError(f"{label}: invalid risk_profile")
-    if data["batch_profile"] not in BATCH_PROFILES:
-        raise AssertionError(f"{label}: invalid batch_profile")
-    if data["executor"] not in EXECUTORS:
-        raise AssertionError(f"{label}: invalid executor")
-    if data["governor"] not in GOVERNORS:
-        raise AssertionError(f"{label}: invalid governor")
-    if data["next_owner"] not in NEXT_OWNERS:
-        raise AssertionError(f"{label}: invalid next_owner")
-    if int(data["current_batch"]) < 1 or int(data["current_batch"]) > int(data["planned_batches"]):
-        raise AssertionError(f"{label}: current_batch must be between 1 and planned_batches")
-    acceptance = data["business_acceptance"]
-    for key in ("unit", "pipeline", "api", "real_business"):
-        if key not in acceptance:
-            raise AssertionError(f"{label}: missing business_acceptance.{key}")
-        if acceptance[key] not in BUSINESS_ACCEPTANCE:
-            raise AssertionError(f"{label}: invalid business_acceptance.{key}")
-    if data["risk_profile"] in {"standard", "strict"}:
-        for key in ("step_critical", "final_critical"):
-            if not isinstance(data[key], list) or not data[key] or not all(isinstance(item, str) for item in data[key]):
-                raise AssertionError(f"{label}: {key} must be a non-empty string list")
-
-def main():
-    project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    print(f"[i] Validating project layout in: {project_dir}")
-
-    # 1. Check folder structures
-    required_dirs = ["agents", "references", "scripts"]
-    for d in required_dirs:
-        dir_path = os.path.join(project_dir, d)
-        if not os.path.isdir(dir_path):
-            print(f"[-] Error: Missing directory -> {dir_path}")
-            sys.exit(1)
-        print(f"[+] Directory exists: {d}/")
-
-    # 2. Check metadata configs
-    skill_md = os.path.join(project_dir, "SKILL.md")
-    openai_yaml = os.path.join(project_dir, "agents/openai.yaml")
-
-    if not check_file_exists(skill_md) or not check_file_exists(openai_yaml):
-        sys.exit(1)
-
-    # Validate SKILL.md frontmatter
-    try:
-        with open(skill_md, "r", encoding="utf-8") as f:
-            content = f.read()
-            if not content.startswith("---"):
-                print("[-] Error: SKILL.md does not start with YAML frontmatter ---")
-                sys.exit(1)
-            parts = content.split("---")
-            if len(parts) < 3:
-                print("[-] Error: SKILL.md has invalid frontmatter blocks")
-                sys.exit(1)
-            frontmatter = yaml_load(parts[1])
-            print(f"[+] SKILL.md Frontmatter validated. Skill Name: {frontmatter.get('name')}")
-    except Exception as e:
-        print(f"[-] Error parsing SKILL.md frontmatter: {e}")
-        sys.exit(1)
-
-    # Validate openai.yaml
-    try:
-        with open(openai_yaml, "r", encoding="utf-8") as f:
-            meta = yaml_load(f.read())
-            interface = meta.get("interface") if isinstance(meta, dict) else None
-            if not isinstance(interface, dict):
-                raise AssertionError("missing interface mapping")
-            required_interface = {"display_name", "short_description", "default_prompt"}
-            missing_interface = sorted(required_interface - set(interface))
-            if missing_interface:
-                raise AssertionError(f"missing interface fields: {missing_interface}")
-            if "$codex-brief-antigravity-review" not in str(interface["default_prompt"]):
-                raise AssertionError("default_prompt must explicitly mention the skill")
-            policy = meta.get("policy", {})
-            if policy.get("allow_implicit_invocation", True) is not True:
-                raise AssertionError("implicit invocation must remain enabled")
-            print(f"[+] agents/openai.yaml validated. Display Name: {interface['display_name']}")
-            for required_text in [
-                "temporary structured backup",
-                "remove temporary backups",
-                "Long-term history is managed",
-            ]:
-                if required_text not in content:
-                    raise AssertionError(f"SKILL.md missing backup lifecycle text: {required_text}")
-    except Exception as e:
-        print(f"[-] Error parsing agents/openai.yaml: {e}")
-        sys.exit(1)
-
-    # 3. Check reference templates
-    required_templates = [
-        "brief-template.md",
-        "report-template.md",
-        "review-template.md",
-        "agy-dispatch-template.md",
-        "timeout-audit-template.md",
-        "handoff-contract.md"
-    ]
-    for tmpl in required_templates:
-        tmpl_path = os.path.join(project_dir, "references", tmpl)
-        if not check_file_exists(tmpl_path):
-            sys.exit(1)
-
-    # 4. Check specific contents in timeout-audit-template.md
-    timeout_path = os.path.join(project_dir, "references", "timeout-audit-template.md")
-    try:
-        with open(timeout_path, "r", encoding="utf-8") as f:
-            timeout_content = f.read()
-        required_sections = [
-            "文档类型：Timeout Audit",
-            "## 结论",
-            "## Review 范围",
-            "## 验证记录",
-            "## 后续门禁"
-        ]
-        for sec in required_sections:
-            if sec not in timeout_content:
-                print(f"[-] Error: timeout-audit-template.md is missing required section '{sec}'")
-                sys.exit(1)
-        print("[+] timeout-audit-template.md content validated.")
-    except Exception as e:
-        print(f"[-] Error checking timeout-audit-template.md contents: {e}")
-        sys.exit(1)
-
-
-    # 5. Check audit hardening content in core templates
-    template_requirements = {
-        "brief-template.md": [
-            "Handoff Contract",
-            "compact / standard / strict",
-            "函数级变更地图",
-            "数据合同",
-            "不变量与错误矩阵",
-            "TDD 与生产 wiring",
-            "## 5. Git / 工作区硬约束",
-            "## 10. 业务验收标准",
-            "## 11. Key Assertions",
-            "## 12. 阻塞处理",
-            "pytest 通过不能替代业务链路通过",
-            "备份仅用于失败回滚",
-            "历史版本通过 `/Users/elvis/file/develop/opensource/openspec-superpower-change`",
-        ],
-        "report-template.md": [
-            "PASS / FAIL / BLOCKED",
-            "Handoff Contract Fingerprint",
-            "## Git / 工作区状态",
-            "## Evidence",
-            "### Commands",
-            "### Artifacts",
-            "### Key Assertions",
-            "## 业务验收分层",
-            "## 子问题覆盖矩阵",
-        ],
-        "review-template.md": [
-            "# Review Result: PASS / FAIL / BLOCKED",
-            "Contract Consensus",
-            "## Summary",
-            "## Findings",
-            "## Required Fixes",
-            "## Verification",
-            "## Final Decision",
-            "Brief 要求 server/API/真实业务回归，而 Report 只有 pytest 证据",
-        ],
+    if data["schema_version"] != SCHEMA_VERSION:
+        raise AssertionError(f"{label}: schema_version must be {SCHEMA_VERSION}")
+    enums = {
+        "mode": MODES,
+        "approval_status": APPROVAL_STATUSES,
+        "risk_profile": RISK_PROFILES,
+        "batch_profile": BATCH_PROFILES,
+        "executor": EXECUTORS,
+        "governor": GOVERNORS,
+        "next_owner": NEXT_OWNERS,
+        "lifecycle_state": LIFECYCLE_STATES,
+        "last_review_result": REVIEW_RESULTS,
+        "blocker_owner": BLOCKER_OWNERS,
+        "final_verification": FINAL_VERIFICATION_RESULTS,
+        "final_review_result": FINAL_REVIEW_RESULTS,
     }
-    for tmpl, needles in template_requirements.items():
-        path = os.path.join(project_dir, "references", tmpl)
-        with open(path, "r", encoding="utf-8") as f:
-            text = f.read()
+    for key, allowed in enums.items():
+        if data[key] not in allowed:
+            raise AssertionError(f"{label}: invalid {key}")
+    for key in ("current_batch", "planned_batches", "attempt", "contract_revision"):
+        _require_positive_int(data, key, label)
+    if data["current_batch"] > data["planned_batches"]:
+        raise AssertionError(f"{label}: current_batch must not exceed planned_batches")
+    if not isinstance(data["change_id"], str) or not re.fullmatch(
+        r"[a-z0-9]+(?:-[a-z0-9]+)*", data["change_id"]
+    ):
+        raise AssertionError(f"{label}: change_id must be a path-safe kebab-case slug")
+    if data["executor"] != "external-agent" or data["governor"] != "codex-brief-antigravity-review":
+        raise AssertionError(f"{label}: execution contract requires external-agent executor and brief governor")
+    if data["mode"] not in {"approved-implementation", "direct-change", "self-evolution"}:
+        raise AssertionError(f"{label}: execution contract has invalid mode")
+    if data["mode"] in {"approved-implementation", "self-evolution"} and data["approval_status"] != "approved":
+        raise AssertionError(f"{label}: execution contract must be approved")
+    if data["mode"] == "direct-change" and data["approval_status"] not in {"not-required", "approved"}:
+        raise AssertionError(f"{label}: direct-change execution contract has invalid approval")
+    acceptance = data["business_acceptance"]
+    if not isinstance(acceptance, dict):
+        raise AssertionError(f"{label}: business_acceptance must be a mapping")
+    for key in ("unit", "pipeline", "api", "real_business"):
+        if acceptance.get(key) not in BUSINESS_ACCEPTANCE:
+            raise AssertionError(f"{label}: invalid business_acceptance.{key}")
+    for key in ("step_critical", "final_critical"):
+        if not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key]):
+            raise AssertionError(f"{label}: {key} must be a string list")
+        if data["risk_profile"] in {"standard", "strict"} and not data[key]:
+            raise AssertionError(f"{label}: {key} must be a non-empty string list")
+    if not isinstance(data["stop_conditions"], list) or not data["stop_conditions"] or not all(
+        isinstance(item, str) for item in data["stop_conditions"]
+    ):
+        raise AssertionError(f"{label}: stop_conditions must be a non-empty string list")
+    strategy = data["verification_strategy"]
+    if not isinstance(strategy, dict) or not all(
+        isinstance(strategy.get(key), str) and strategy[key]
+        for key in ("step", "final")
+    ):
+        raise AssertionError(f"{label}: verification_strategy must be a step/final string mapping")
+    readonly = data["readonly_fields"]
+    expected_readonly = IMMUTABLE_FIELDS
+    if not isinstance(readonly, list) or not expected_readonly.issubset(readonly):
+        raise AssertionError(f"{label}: readonly_fields is incomplete")
+
+    state = data["lifecycle_state"]
+    expected_owners = {
+        "ready-for-brief": {"codex-brief-antigravity-review"},
+        "ready-for-execution": {"external-agent"},
+        "ready-for-review": {"codex-brief-antigravity-review"},
+        "needs-fix": {"codex-brief-antigravity-review", "openspec-superpower-change"},
+        "blocked": NEXT_OWNERS,
+        "awaiting-final-verification": {"openspec-superpower-change"},
+        "complete": {"user"},
+    }
+    if data["next_owner"] not in expected_owners[state]:
+        raise AssertionError(f"{label}: invalid next_owner for {state}")
+    if state != "blocked" and any(
+        data[key] not in {None, "none"}
+        for key in ("blocked_reason", "blocker_owner", "resume_condition")
+    ):
+        raise AssertionError(f"{label}: non-blocked state must clear blocker fields")
+    if state in {"ready-for-execution", "ready-for-review"} and data["last_review_result"] != "not-run":
+        raise AssertionError(f"{label}: active attempt requires last_review_result not-run")
+    if state in {"ready-for-brief", "ready-for-execution", "ready-for-review"} and (
+        data["final_verification"] != "pending" or data["final_review_result"] != "pending"
+    ):
+        raise AssertionError(f"{label}: pre-final states require pending final gates")
+    if state == "needs-fix" and data["last_review_result"] != "fail":
+        raise AssertionError(f"{label}: needs-fix requires fail review")
+    if state == "blocked":
+        if data["last_review_result"] != "blocked":
+            raise AssertionError(f"{label}: blocked review result is required")
+        if data["blocker_owner"] == "none" or data["blocked_reason"] in {None, "none"}:
+            raise AssertionError(f"{label}: blocked requires blocker owner and reason")
+        if data["resume_condition"] in {None, "none"}:
+            raise AssertionError(f"{label}: blocked requires resume_condition")
+    if state == "awaiting-final-verification":
+        if data["current_batch"] != data["planned_batches"]:
+            raise AssertionError(f"{label}: awaiting-final-verification requires final batch")
+        if (
+            data["last_review_result"] != "pass"
+            or data["final_verification"] != "pending"
+            or data["final_review_result"] != "pending"
+        ):
+            raise AssertionError(f"{label}: awaiting-final-verification requires batch review pass and pending final gates")
+        if data["next_owner"] != "openspec-superpower-change":
+            raise AssertionError(f"{label}: awaiting-final-verification must return to router")
+    if state == "complete":
+        if data["current_batch"] != data["planned_batches"]:
+            raise AssertionError(f"{label}: complete requires final batch")
+        if (
+            data["last_review_result"] != "pass"
+            or data["final_verification"] != "pass"
+            or data["final_review_result"] != "pass"
+        ):
+            raise AssertionError(f"{label}: complete requires batch review, final review, and final verification pass")
+        if data["next_owner"] != "user":
+            raise AssertionError(f"{label}: complete requires next_owner user")
+    elif data["final_verification"] == "pass" or data["final_review_result"] == "pass":
+        raise AssertionError(f"{label}: final pass results are valid only when complete")
+
+
+def validate_transition(before: dict, after: dict, label: str) -> None:
+    validate_handoff_contract(before, f"{label}:before")
+    validate_handoff_contract(after, f"{label}:after")
+    if before["lifecycle_state"] == "complete":
+        raise AssertionError(f"{label}: complete is terminal")
+    for key in IMMUTABLE_FIELDS:
+        if before[key] != after[key]:
+            raise AssertionError(f"{label}: readonly field changed: {key}")
+    if after["contract_revision"] != before["contract_revision"] + 1:
+        raise AssertionError(f"{label}: contract_revision must increment by one")
+    current_state = before["lifecycle_state"]
+    next_state = after["lifecycle_state"]
+    if next_state not in ALLOWED_TRANSITIONS[current_state]:
+        raise AssertionError(f"{label}: invalid lifecycle transition")
+    special_attempt_transitions = {
+        ("ready-for-review", "needs-fix"),
+        ("ready-for-review", "ready-for-brief"),
+        ("awaiting-final-verification", "needs-fix"),
+    }
+    if current_state == "blocked" and next_state != "blocked":
+        special_attempt_transitions.add((current_state, next_state))
+    if (current_state, next_state) not in special_attempt_transitions:
+        if after["current_batch"] != before["current_batch"] or after["attempt"] != before["attempt"]:
+            raise AssertionError(f"{label}: transition must keep the same batch and attempt")
+    if next_state in {"needs-fix", "blocked"} and after["current_batch"] != before["current_batch"]:
+        raise AssertionError(f"{label}: FAIL/BLOCKED must stay on the same batch")
+    if next_state == "needs-fix":
+        if after["attempt"] != before["attempt"] + 1:
+            raise AssertionError(f"{label}: FAIL must increment attempt")
+        if after["last_review_result"] != "fail":
+            raise AssertionError(f"{label}: needs-fix requires fail review")
+    if current_state == "blocked" and next_state != "blocked":
+        if after["current_batch"] != before["current_batch"]:
+            raise AssertionError(f"{label}: resumed work must stay on the same batch")
+        if after["attempt"] != before["attempt"] + 1:
+            raise AssertionError(f"{label}: resumed work must use a fresh attempt")
+    if current_state == "ready-for-review" and next_state == "ready-for-brief":
+        if before["current_batch"] >= before["planned_batches"]:
+            raise AssertionError(f"{label}: final PASS must hand back to router")
+        if after["current_batch"] != before["current_batch"] + 1 or after["attempt"] != 1:
+            raise AssertionError(f"{label}: non-final PASS must advance one batch and reset attempt")
+        if after["last_review_result"] != "pass":
+            raise AssertionError(f"{label}: batch advance requires Review PASS")
+    if next_state == "awaiting-final-verification":
+        if before["current_batch"] != before["planned_batches"]:
+            raise AssertionError(f"{label}: only final batch can hand back")
+        if after["current_batch"] != before["current_batch"]:
+            raise AssertionError(f"{label}: final handback keeps the same batch")
+
+
+def validate_frontmatter(skill: str) -> None:
+    if not skill.startswith("---\n"):
+        raise AssertionError("SKILL.md: missing YAML frontmatter")
+    parts = skill.split("---\n", 2)
+    keys = [
+        line.split(":", 1)[0].strip()
+        for line in parts[1].splitlines()
+        if line.strip() and not line.startswith(" ") and ":" in line
+    ]
+    if keys != ["name", "description"]:
+        raise AssertionError(f"SKILL.md: frontmatter keys must be name, description only; got {keys}")
+
+
+def main(argv: list[str] | None = None) -> int:
+    argv = sys.argv if argv is None else argv
+    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd().resolve()
+    print(f"[i] Validating project layout in: {root}")
+    for directory in ("agents", "references", "scripts"):
+        if not (root / directory).is_dir():
+            raise AssertionError(f"missing directory: {root / directory}")
+
+    skill = read(root / "SKILL.md")
+    metadata = yaml_load(read(root / "agents" / "openai.yaml"))
+    validate_frontmatter(skill)
+    interface = metadata.get("interface") if isinstance(metadata, dict) else None
+    if not isinstance(interface, dict):
+        raise AssertionError("agents/openai.yaml: missing interface mapping")
+    for field in ("display_name", "short_description", "default_prompt"):
+        if field not in interface:
+            raise AssertionError(f"agents/openai.yaml: missing interface.{field}")
+    if "$codex-brief-antigravity-review" not in str(interface["default_prompt"]):
+        raise AssertionError("agents/openai.yaml: default_prompt must mention the skill")
+    if metadata.get("policy", {}).get("allow_implicit_invocation") is not True:
+        raise AssertionError("agents/openai.yaml: implicit invocation must remain enabled")
+
+    required_templates = {
+        "brief-template.md": (
+            "Canonical Handoff Contract", "attempt-<AA>", "contract_revision",
+            "函数级变更地图", "业务验收标准", "外部 Agent 不得修改 canonical",
+        ),
+        "report-template.md": (
+            "Execution Report", "Attempt <AA>", "Canonical status path",
+            "建议状态", "外部 Agent 不得直接编辑 canonical",
+        ),
+        "review-template.md": (
+            "# Review Result: PASS / FAIL / BLOCKED", "Required State Transition",
+            "needs-fix", "resume_condition", "must be reviewed again",
+            "awaiting-final-verification",
+        ),
+        "agy-dispatch-template.md": (
+            "attempt-<AA>", "Canonical status", "不得修改 canonical status",
+        ),
+        "timeout-audit-template.md": (
+            "Attempt <AA>", "resume_condition", "fresh Review",
+        ),
+    }
+    for filename, needles in required_templates.items():
+        text = read(root / "references" / filename)
         for needle in needles:
-            if needle not in text:
-                print(f"[-] Error: {tmpl} is missing required audit text {needle!r}")
-                sys.exit(1)
-        print(f"[+] {tmpl} audit hardening content validated.")
+            require(text, needle, filename)
 
-    # 6. Check Handoff Contract schema and role boundaries
-    handoff_path = os.path.join(project_dir, "references", "handoff-contract.md")
-    with open(handoff_path, "r", encoding="utf-8") as f:
-        handoff_text = f.read()
-    validate_handoff_contract(extract_handoff_contract(handoff_text, "handoff-contract.md"), "handoff-contract.md")
-    for needle in [
-        "Do not invent or overwrite `mode`, `approval_status`, or `risk_profile`",
-        "Unit tests do not imply API/server/business-chain success",
-        "current_batch",
-        "planned_batches",
-    ]:
-        if needle not in handoff_text:
-            print(f"[-] Error: handoff-contract.md is missing required text {needle!r}")
-            sys.exit(1)
-    print("[+] handoff-contract.md schema and boundary content validated.")
+    for needle in (
+        "Standalone Lightweight", "Handed-off External Execution",
+        "Review and fix", "attempt-<AA>", "same batch", "needs-fix",
+        "awaiting-final-verification", "openspec-superpower-change",
+        "temporary structured backup", "Major Self-Evolution",
+    ):
+        require(skill, needle, "SKILL.md")
 
-    print("\n[✓] Validation Succeeded: The skill structure is fully complete and compliant!")
+    handoff_text = read(root / "references" / "handoff-contract.md")
+    contract = extract_handoff_contract(handoff_text, "handoff-contract.md")
+    validate_handoff_contract(contract, "handoff-contract.md")
+    require(handoff_text, "must not embed another mutable block", "handoff-contract.md")
+    print("[✓] Validation succeeded: templates and lifecycle are compliant")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    try:
+        raise SystemExit(main())
+    except AssertionError as exc:
+        print(f"Validation failed: {exc}", file=sys.stderr)
+        raise SystemExit(1)

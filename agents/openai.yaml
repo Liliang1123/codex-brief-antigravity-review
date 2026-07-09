@@ -1,7 +1,7 @@
 interface:
   display_name: "Codex Brief / Antigravity Review"
-  short_description: "Coordinate external-agent briefs and evidence reviews"
-  default_prompt: "Use $codex-brief-antigravity-review to write the next implementation brief and audit its report."
+  short_description: "Write scoped prompts and review external-agent evidence"
+  default_prompt: "Use $codex-brief-antigravity-review to refine this task prompt or audit the current diff/report evidence without changing implementation files."
 
 policy:
   allow_implicit_invocation: true

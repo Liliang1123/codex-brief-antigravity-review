@@ -1,84 +1,117 @@
 ---
 name: codex-brief-antigravity-review
-description: "Use when coordinating external-agent implementation, writing or breaking down implementation/task/step/batch briefs, dispatching Antigravity CLI, auditing reports or reviews, resuming shared status, or checking PASS evidence; also trigger on 实施 Brief、任务拆解、外部 Agent 实施、Codex Review、Report 审计."
+description: "Use when writing or refining Antigravity/Codex task prompts or briefs, reviewing diffs/reports/evidence, auditing PASS/FAIL/BLOCKED decisions, or governing an already-handed-off external-agent batch; also trigger on 任务提示、实施 Brief、Codex Review、diff 复核、Report 审计、外部批次复核."
 ---
 
-# Codex Brief & Antigravity Review Gate
+# Codex Brief & Antigravity Review
 
-External execution governor for changes routed by `openspec-superpower-change`.
-Codex designs and reviews; the named external agent implements; every batch
-leaves auditable Brief, Report, Review, status, and evidence.
+Focused prompt and review skill with two mutually exclusive paths. It stays
+lightweight for standalone wording/read-only review and becomes an external
+execution governor only when a valid Handoff Contract already exists.
 
-## Role Boundary
+## Route Selection
 
-- Consume the existing Handoff Contract from `references/handoff-contract.md`.
-- Do not re-decide OpenSpec route, approval status, or risk profile.
-- Turn one complete business batch into a Brief.
-- Dispatch the external agent and require a Report or Abort Report.
-- Audit claims as evidence, then write `PASS`, `FAIL`, or `BLOCKED`.
-- Update shared status and authorize the next batch only after `PASS`.
+1. Use **Standalone Lightweight** when the request only writes/refines a
+   prompt, Brief, checklist, or performs read-only diff/Report/evidence review.
+2. Use **Handed-off External Execution** when canonical `status.md` contains a
+   valid Handoff Contract and the task is dispatch, Report audit, retry,
+   recovery, or batch promotion.
+3. Return to `openspec-superpower-change` before any file modification,
+   implementation, behavior change, OpenSpec/risk decision, or final task
+   completion decision.
 
-If the Handoff Contract is missing, contradictory, stale, or has multiple marker
-blocks, stop with BLOCKED and return to `openspec-superpower-change` or the
-user. Do not invent a new mode, approval status, or risk profile.
+“Review and fix” is not standalone review. Do not silently switch from review
+to implementation.
 
-## Artifact Paths
+## Standalone Lightweight
+
+This path does not require an OpenSpec proposal, Handoff Contract, Superpowers
+plan, or collaboration artifact. Produce the requested prompt/Brief/checklist
+or a findings-first read-only review directly in chat unless the user requests
+another output location.
+
+- State the reviewed scope and evidence actually inspected.
+- For a diff review, list actionable findings by severity and location.
+- Do not write batch `PASS`, advance shared status, or imply implementation was
+  verified when no governed batch exists.
+- If the user asks to save files, apply fixes, dispatch implementation, or
+  change workflow behavior, return to the change gate first.
+
+## Handed-off External Execution
+
+Consume the router-owned contract from
+`docs/agent-collab/<change-id>/status.md`. Do not re-decide mode, approval,
+risk, planned batches, or final verification commands. Missing, stale,
+duplicated, contradictory, or unparsable canonical state is `BLOCKED`.
+
+### Artifact Paths
 
 | Artifact | Path |
 |---|---|
-| Brief | `docs/agent-collab/<change-id>/<NN>-brief.md` |
-| Report | `docs/agent-collab/<change-id>/<NN>-report.md` |
-| Abort Report | `docs/agent-collab/<change-id>/<NN>-report-abort.md` |
-| Status / Handoff Contract | `docs/agent-collab/<change-id>/status.md` |
-| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-review.md` |
-| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-timeout-audit.md` |
+| Canonical status | `docs/agent-collab/<change-id>/status.md` |
+| Brief | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-brief.md` |
+| Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md` |
+| Abort Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report-abort.md` |
+| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-review.md` |
+| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-timeout-audit.md` |
 
-## State Machine
+Attempt-specific paths preserve history. Never overwrite evidence from an
+earlier `FAIL`, `BLOCKED`, or timeout attempt.
 
-1. Read the Handoff Contract and active plan section for the current batch.
-2. Write `<NN>-brief.md` with allow-list, block-list, profile, function map,
-   data contract, invariants, error matrix, TDD path, wiring, acceptance layers,
-   critical commands, abort path, and report path.
-3. Dispatch the external agent using `references/agy-dispatch-template.md`.
-4. Require `<NN>-report.md` or `<NN>-report-abort.md`.
-5. Review the Report, rerun critical commands where possible, and independently
-   check at least one behavior for `standard` or all required real layers for
-   `strict`.
-6. Write a Review whose first line is exactly `# Review Result: PASS`,
+### State Machine
+
+1. Validate canonical contract revision, lifecycle, batch, attempt, and owner.
+2. Transition canonical status to `ready-for-execution`, increment its
+   revision, then write the current attempt Brief using that execution
+   fingerprint and dispatch the named agent.
+3. Require the attempt Report or Abort Report using the execution revision;
+   then transition status to `ready-for-review` with a new review revision.
+4. Audit scope, evidence, critical commands, production wiring, and required
+   acceptance layers. Rerun critical commands where possible.
+5. Write a Review whose first line is exactly `# Review Result: PASS`,
    `# Review Result: FAIL`, or `# Review Result: BLOCKED`.
-7. Only `PASS` may advance `current_batch` or create the next Brief.
+6. Apply the transition:
+   - `FAIL` -> same batch `needs-fix`, increment attempt, create a correction
+     Brief, verify, and Review again;
+   - `BLOCKED` -> same batch `blocked`, record owner/reason/resume condition,
+     then use a fresh attempt and Review after recovery;
+   - non-final `PASS` -> increment one batch, reset attempt, next Brief;
+   - final `PASS` -> `awaiting-final-verification`, return to
+     `openspec-superpower-change` without claiming task completion.
+
+Only Review `PASS` may promote a batch. `FAIL` and `BLOCKED` must be reviewed
+again after correction or recovery; a chat acknowledgment is not closure.
 
 ## Evidence Profiles
 
-- `compact`: concise Brief/Report/Review; focused commands only; no heavy tables
-  unless needed for the contract.
-- `standard`: function map, data contract, invariants, error matrix, RED/GREEN
-  evidence, production wiring, `step_critical`, and business acceptance layers.
-  `final_critical` runs once at final batch unless later code changes invalidate
-  the evidence.
-- `strict`: security, auth, permission, public API/schema, persistence,
-  migration, deletion/recovery, deployment/rollback, cross-tenant boundaries.
-  Mock or unit-only evidence cannot replace required real acceptance.
+- `compact`: concise Brief/Report/Review and focused commands; omit heavy tables
+  unless the contract needs them.
+- `standard`: function map, data contract, invariants, error matrix, RED/GREEN,
+  production wiring, `step_critical`, and an independent behavior check.
+- `strict`: required real security/API/schema/migration/rollback/business-chain
+  evidence; mocks and unit tests cannot substitute for required real layers.
+
+The governor runs `step_critical` for each attempt. The router runs
+`final_critical` after final batch Review PASS; later implementation changes
+invalidate that final evidence.
 
 ## Non-Negotiables
 
-- Codex does not edit implementation files while this skill is active unless the
-  user explicitly changes mode.
-- Do not substitute Codex subagents for the named external agent when external
-  implementation was requested.
+- Codex does not edit implementation files while this skill is active; return
+  to the change gate if the user requests implementation.
+- Do not substitute Codex subagents for the named external executor.
+- Every governed Brief lists allowed/forbidden files, abort conditions, attempt
+  Report path, critical evidence, and canonical status fingerprint.
+- External agents must not edit canonical status or readonly fields.
+- Missing Report/evidence/required real acceptance is `BLOCKED`.
+- Scope violation, destructive git operation, or reproduced regression is
+  `FAIL`.
+- Unit tests alone never prove API/server/real business success unless those
+  layers are `not-applicable`.
+- Never advance a batch or claim completion from `FAIL`, `BLOCKED`, or stale
+  evidence.
 - Never run `git add`, `git commit`, `git reset`, or `git clean` unless the user
-  explicitly commands it.
-- Every Brief must list allowed files, forbidden files, abort conditions, report
-  path, and critical evidence.
-- External agents must not overwrite readonly Handoff Contract fields: `mode`,
-  `approval_status`, `risk_profile`.
-- Missing Report, missing critical evidence, missing required raw artifact,
-  missing API/server/business-chain proof, or unreachable dependency is
-  `BLOCKED`.
-- Forbidden-scope edits, destructive git operations, or real regression still
-  reproducing the failure are `FAIL`.
-- Unit tests or `pytest` alone never prove API/server/real business success
-  unless the Brief marks those layers `not-applicable`.
+  explicitly commands it; never push without explicit approval.
 
 ## Templates
 
@@ -91,11 +124,9 @@ user. Do not invent a new mode, approval status, or risk profile.
 
 ## Maintenance
 
-When changing this skill, read `SKILL.md`, preserve the Brief -> Dispatch ->
-Report -> Review loop, update templates and validator together, create a
-temporary structured backup before editing, validate `scripts/validate_templates.py`,
-then remove temporary backups and `.bak.*` files after validation passes.
-Long-term history is managed by
-`/Users/elvis/file/develop/opensource/codex-brief-antigravity-review`; never
-leave backup copies under `/Users/elvis/.codex/skills/`, and do not push or run
-prohibited git commands without explicit user approval.
+Create a temporary structured backup before editing. Editorial changes that do
+not alter triggers, required fields, lifecycle, evidence, or PASS conditions may
+use compact Direct Change. Semantic workflow changes are Major Self-Evolution
+and must return to `openspec-superpower-change` for an approved contract,
+RED/GREEN forward-test, validation, Review, rollback, runtime/source sync, and
+final reporting. Remove temporary backups only after all checks pass.

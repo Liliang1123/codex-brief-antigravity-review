@@ -2,18 +2,21 @@
 
 [English](README.md) | [简体中文](README_cn.md)
 
-`codex-brief-antigravity-review` is a Codex skill for coordinating external-agent implementation with structured briefs, execution reports, independent reviews, and evidence gates.
+`codex-brief-antigravity-review` is a Codex skill for writing scoped Antigravity/Codex prompts and reviewing diffs, reports, and evidence. It stays lightweight for standalone work and governs structured external-agent batches only after `openspec-superpower-change` hands them off.
 
 It is intended for workflows where Codex should design, dispatch, and audit work, while a separate execution agent such as Antigravity CLI performs implementation under explicit file, command, and reporting boundaries.
 
 ## Highlights
 
-- Converts approved implementation plans into batch-level briefs.
+- Writes or refines standalone task prompts, briefs, and checklists without requiring OpenSpec or Handoff state.
+- Reviews ordinary diffs and evidence read-only without pretending to promote a governed batch.
+- Converts approved implementation plans into attempt-specific batch briefs.
 - Separates orchestration and review from implementation execution.
 - Requires structured reports or abort reports from the external agent.
 - Audits evidence before writing PASS, FAIL, or BLOCKED.
 - Prevents false PASS claims when critical proof is missing.
-- Maintains a shared Handoff Contract for batch status and promotion control.
+- Preserves `FAIL`/`BLOCKED` attempt history and requires correction or recovery followed by another Review.
+- Uses canonical `status.md` for shared state and returns final batch `PASS` to the change gate for final verification.
 
 ## Why It Exists
 
@@ -32,37 +35,42 @@ This skill creates a strict Brief -> Dispatch -> Report -> Review loop.
 
 | Role | Responsibility |
 |---|---|
-| Codex | Reads the approved plan, writes briefs, dispatches the external agent, audits reports, reruns critical evidence where possible, and writes PASS / FAIL / BLOCKED reviews. |
+| Codex standalone | Writes prompts/briefs/checklists or performs read-only diff/evidence review; no Handoff state or batch promotion. |
+| Codex governor | Reads the approved plan, writes attempt briefs, dispatches the external agent, audits reports, reruns critical evidence, and writes PASS / FAIL / BLOCKED reviews. |
 | External agent | Implements only the allowed scope, obeys forbidden files and abort rules, runs required checks, and writes a report. |
-| Handoff Contract | Holds shared state: mode, approval status, risk profile, current batch, evidence profile, and promotion rules. |
+| Handoff Contract | Canonical `status.md` state for batch, attempt, lifecycle, blocker recovery, evidence, and final handback. |
 | openspec-superpower-change | Owns request routing, OpenSpec approval status, risk profile, and implementation authorization before this skill takes over. |
 
-Codex must not re-decide OpenSpec approval or risk classification while this skill is active.
+Standalone use must not modify implementation. In handed-off use, Codex must not re-decide OpenSpec approval or risk classification.
 
 ## Workflow
 
 ```text
-Read Handoff Contract
--> read approved plan section for the current batch
--> write <NN>-brief.md
+Standalone: write/refine prompt or review diff/report -> return findings
+
+Handed-off: read canonical Handoff Contract
+-> read approved plan section for the current batch/attempt
+-> write <NN>-attempt-<AA>-brief.md
 -> dispatch external agent
--> require <NN>-report.md or <NN>-report-abort.md
+-> require attempt Report or Abort Report
 -> audit report claims against evidence
 -> rerun critical checks where possible
 -> write step review: PASS / FAIL / BLOCKED
--> advance only after PASS
+-> FAIL/BLOCKED: same batch, new attempt, review again
+-> non-final PASS: next batch
+-> final PASS: return to openspec-superpower-change for final verification
 ```
 
 ## Artifact Layout
 
 | Artifact | Path |
 |---|---|
-| Brief | `docs/agent-collab/<change-id>/<NN>-brief.md` |
-| Report | `docs/agent-collab/<change-id>/<NN>-report.md` |
-| Abort Report | `docs/agent-collab/<change-id>/<NN>-report-abort.md` |
+| Brief | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-brief.md` |
+| Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md` |
+| Abort Report | `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report-abort.md` |
 | Status / Handoff Contract | `docs/agent-collab/<change-id>/status.md` |
-| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-review.md` |
-| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-timeout-audit.md` |
+| Review | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-review.md` |
+| Timeout Audit | `docs/review/YYYY-MM-DD-<change-id>-step-<NN>-attempt-<AA>-timeout-audit.md` |
 
 ## Evidence Profiles
 
@@ -86,8 +94,10 @@ Read Handoff Contract
 │   ├── agy-dispatch-template.md
 │   ├── timeout-audit-template.md
 │   └── handoff-contract.md
-└── scripts/
-    └── validate_templates.py
+├── scripts/
+│   └── validate_templates.py
+└── tests/
+    └── test_workflow_rules.py
 ```
 
 ## Key References
@@ -122,9 +132,12 @@ cp -R codex-brief-antigravity-review "${CODEX_HOME:-$HOME/.codex}/skills/codex-b
 Run validation after editing the skill:
 
 ```bash
-python3 /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
-python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
+"${PYTHON_BIN:-python3}" /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
+PYTHONDONTWRITEBYTECODE=1 python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /path/to/codex-brief-antigravity-review/tests -v
 ```
+
+`quick_validate.py` requires PyYAML; set `PYTHON_BIN` accordingly. The project validator and tests exercise the dependency-free fallback.
 
 ## Example Prompts
 
@@ -140,12 +153,17 @@ Use codex-brief-antigravity-review to audit the latest external-agent report, re
 Use codex-brief-antigravity-review to resume shared status and determine whether the next batch may start.
 ```
 
+```text
+Use codex-brief-antigravity-review standalone mode to improve this Antigravity task prompt. Do not create Handoff artifacts or modify project files.
+```
+
 ## Maintenance Notes
 
-- This skill consumes routing and approval decisions from `openspec-superpower-change`.
+- This skill works standalone for prompt/read-only review tasks and consumes routing decisions only for handed-off execution.
 - Do not use Codex subagents as a substitute for the named external agent when external implementation was requested.
 - Do not treat a report as proof; audit the evidence and rerun critical checks where possible.
 - Do not advance shared status unless the review result is PASS.
+- A final batch PASS is not task completion; return it to `openspec-superpower-change`.
 
 ## License
 

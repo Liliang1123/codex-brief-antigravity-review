@@ -1,4 +1,4 @@
-# <change-id> Step <NN> Timeout Audit
+# <change-id> Step <NN> Attempt <AA> Timeout Audit
 
 文档类型：Timeout Audit
 日志及版本：YYYY-MM-DD v1
@@ -11,9 +11,9 @@
 
 ## Review 范围
 
-- Brief：`docs/agent-collab/<change-id>/<NN>-brief.md`
-- 预期但未收到的 Report：`docs/agent-collab/<change-id>/<NN>-report.md`
-- 预期但未收到的 Abort Report：`docs/agent-collab/<change-id>/<NN>-report-abort.md`
+- Brief：`docs/agent-collab/<change-id>/<NN>-attempt-<AA>-brief.md`
+- 预期但未收到的 Report：`docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md`
+- 预期但未收到的 Abort Report：`docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report-abort.md`
 
 ## 超时情况
 
@@ -44,4 +44,6 @@
 - 若 no：<说明阻塞原因和需要用户或 Codex 做的决策>
 - Timeout audit required before redispatch: yes
 - Handoff Contract status: present / missing / duplicated / unparsable
+- Lifecycle: `blocked`; current batch unchanged; record `blocked_reason`, `blocker_owner`, and `resume_condition`
+- Recovery must use a new attempt and fresh Review; do not overwrite the timeout attempt
 - Next owner: Codex / external agent / user

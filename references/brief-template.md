@@ -1,4 +1,4 @@
-# <change-id> Step <NN> Brief
+# <change-id> Step <NN> Attempt <AA> Brief
 
 文档类型：Implementation Brief
 日志及版本：YYYY-MM-DD v1
@@ -13,15 +13,23 @@
 
 <只描述本步骤要完成的目标，禁止扩展范围。明确本步骤是修复、验证、调查还是只产出报告。>
 
-## 2.1 Handoff Contract
+## 2.1 Canonical Handoff Contract
 
-必须嵌入或引用唯一 marker block：
+唯一可变 marker block 必须位于：
 
 ```text
-<!-- COOP_HANDOFF_CONTRACT_START -->
-... YAML contract ...
-<!-- COOP_HANDOFF_CONTRACT_END -->
+docs/agent-collab/<change-id>/status.md
 ```
+
+本 Brief 只引用 canonical status，不得嵌入第二份 marker block。记录指纹：
+
+| 字段 | 值 |
+|---|---|
+| `schema_version` | `2` |
+| `contract_revision` | `<n>` |
+| `current_batch` / `planned_batches` | `<NN>/<total>` |
+| `attempt` | `<AA>` |
+| `lifecycle_state` | `ready-for-execution` |
 
 若 Contract 缺失、重复、过期、矛盾或不可解析，本 Brief 不得继续，必须交回 `openspec-superpower-change` 或用户。
 
@@ -55,7 +63,7 @@ Profile：compact / standard / strict
 - 禁止 `git reset`。
 - 禁止 `git clean`。
 - 禁止丢弃用户已有 staged / unstaged / untracked 改动。
-- 若存在 staged 改动且 Brief 未明确授权处理，必须停止并写 `<NN>-report-abort.md`。
+- 若存在 staged 改动且 Brief 未明确授权处理，必须停止并写 `<NN>-attempt-<AA>-report-abort.md`。
 - 若 Brief 明确允许处理 staged 状态，只能执行被授权的命令，并必须保留工作区改动和记录前后状态。
 
 ## 6. 允许副作用
@@ -157,9 +165,11 @@ Supporting commands（执行者必须运行；Codex Review 至少抽查一项或
 如果遇到依赖、LLM 502、server 无法启动、外部服务不可用、未进入目标工具、权限不足或验证命令无法完成：
 
 - 不得声称 `PASS`。
-- 必须生成 `<NN>-report-abort.md` 或在 report 结论写 `BLOCKED`。
+- 必须生成 `<NN>-attempt-<AA>-report-abort.md` 或在 report 结论写 `BLOCKED`。
 - 必须写清楚阻塞命令、错误、已完成操作、raw 输出路径、下一步需要 Codex / 用户 / 外部服务做什么。
 - 缺少 Handoff Contract、只读字段被改写、`current_batch > planned_batches`、或 `step_critical` / `final_critical` 混用时，必须 BLOCKED。
+- `FAIL` 修正或 `BLOCKED` 恢复必须使用新的 `<AA>`，保留同一批次且不得复用旧证据。
+- 外部 Agent 不得修改 canonical `status.md`；只在 Report 中提供证据与建议结果。
 
 ## 13. 质量门禁
 
@@ -170,7 +180,7 @@ git diff --check -- <allowed files>
 ## 14. 执行报告
 
 执行完成后生成：
-- `docs/agent-collab/<change-id>/<NN>-report.md`
+- `docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md`
 
 报告必须包含：
 - 修改文件列表
