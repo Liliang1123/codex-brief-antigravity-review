@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Validate brief/review templates and the shared Handoff lifecycle."""
+"""Validate non-negotiable routing, lifecycle, evidence, and completion gates."""
 from __future__ import annotations
 
+import argparse
+import hashlib
 import re
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 try:
     import yaml
@@ -14,7 +16,10 @@ except ModuleNotFoundError:  # The supported subset has a dependency-free fallba
 
 START = "<!-- COOP_HANDOFF_CONTRACT_START -->"
 END = "<!-- COOP_HANDOFF_CONTRACT_END -->"
-SCHEMA_VERSION = 2
+EVIDENCE_START = "<!-- COOP_EVIDENCE_MANIFEST_START -->"
+EVIDENCE_END = "<!-- COOP_EVIDENCE_MANIFEST_END -->"
+SCHEMA_VERSION = 3
+EVIDENCE_SCHEMA_VERSION = 1
 RISK_PROFILES = {"compact", "standard", "strict"}
 BATCH_PROFILES = {"single", "cohesive", "staged"}
 BUSINESS_ACCEPTANCE = {"required", "optional", "not-applicable"}
@@ -34,8 +39,7 @@ LIFECYCLE_STATES = {
     "needs-fix", "blocked", "awaiting-final-verification", "complete",
 }
 REVIEW_RESULTS = {"not-run", "pass", "fail", "blocked"}
-FINAL_VERIFICATION_RESULTS = {"pending", "pass", "fail", "blocked"}
-FINAL_REVIEW_RESULTS = {"pending", "pass", "fail", "blocked"}
+FINAL_RESULTS = {"pending", "pass", "fail", "blocked"}
 BLOCKER_OWNERS = {
     "none", "openspec-superpower-change", "codex-brief-antigravity-review",
     "external-agent", "user", "dependency",
@@ -49,10 +53,12 @@ ALLOWED_TRANSITIONS = {
     },
     "needs-fix": {"ready-for-execution", "blocked"},
     "blocked": {
-        "ready-for-brief", "ready-for-execution", "ready-for-review",
-        "needs-fix", "blocked",
+        "ready-for-brief", "ready-for-execution", "needs-fix",
+        "awaiting-final-verification", "blocked",
     },
-    "awaiting-final-verification": {"complete", "needs-fix", "blocked"},
+    "awaiting-final-verification": {
+        "awaiting-final-verification", "complete", "needs-fix", "blocked",
+    },
     "complete": set(),
 }
 IMMUTABLE_FIELDS = {
@@ -60,6 +66,38 @@ IMMUTABLE_FIELDS = {
     "batch_profile", "planned_batches", "executor", "governor",
     "step_critical", "final_critical", "business_acceptance",
     "stop_conditions", "verification_strategy", "readonly_fields",
+}
+ARTIFACT_FIELDS = (
+    "attempt_report_artifact", "last_review_artifact",
+    "final_verification_artifact", "final_review_artifact",
+)
+EVIDENCE_ROLES = {
+    "attempt-report", "batch-review", "preflight-review", "timeout-audit",
+    "final-verification", "final-review",
+}
+EVIDENCE_RESULTS = {"pass", "fail", "blocked"}
+STATE_TUPLES = {
+    "ready-for-brief": {
+        ("not-run", "pending", "pending"),
+        ("pass", "pending", "pending"),
+    },
+    "ready-for-execution": {("not-run", "pending", "pending")},
+    "ready-for-review": {("not-run", "pending", "pending")},
+    "needs-fix": {
+        ("fail", "pending", "pending"),
+        ("pass", "fail", "pending"),
+        ("pass", "pass", "fail"),
+    },
+    "blocked": {
+        ("blocked", "pending", "pending"),
+        ("pass", "blocked", "pending"),
+        ("pass", "pass", "blocked"),
+    },
+    "awaiting-final-verification": {
+        ("pass", "pending", "pending"),
+        ("pass", "pass", "pending"),
+    },
+    "complete": {("pass", "pass", "pass")},
 }
 
 
@@ -140,9 +178,83 @@ def extract_handoff_contract(text: str, label: str) -> dict:
     return data
 
 
+def extract_evidence_manifest(text: str, label: str) -> dict:
+    if text.count(EVIDENCE_START) != 1 or text.count(EVIDENCE_END) != 1:
+        raise AssertionError(f"{label}: evidence artifact must have exactly one manifest block")
+    body = text.split(EVIDENCE_START, 1)[1].split(EVIDENCE_END, 1)[0].strip()
+    if body.startswith("```yaml"):
+        body = body.removeprefix("```yaml").strip()
+    if body.endswith("```"):
+        body = body[:-3].strip()
+    data = yaml_load(body)
+    if not isinstance(data, dict):
+        raise AssertionError(f"{label}: evidence manifest must be a YAML mapping")
+    return data
+
+
 def _require_positive_int(data: dict, key: str, label: str) -> None:
-    if not isinstance(data[key], int) or data[key] < 1:
+    if type(data[key]) is not int or data[key] < 1:
         raise AssertionError(f"{label}: {key} must be a positive integer")
+
+
+def _is_nonblank(value) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _validate_string_list(value, key: str, label: str) -> None:
+    if not isinstance(value, list) or not value:
+        raise AssertionError(f"{label}: {key} must be a non-empty string list")
+    if not all(_is_nonblank(item) for item in value):
+        raise AssertionError(f"{label}: {key} entries must be non-blank strings")
+
+
+def _validate_artifact_ref(value, required: bool, key: str, label: str) -> None:
+    if value is None:
+        if required:
+            raise AssertionError(f"{label}: {key} is required")
+        return
+    if not isinstance(value, dict) or set(value) != {"path", "sha256"}:
+        raise AssertionError(f"{label}: {key} must be a path/sha256 mapping or null")
+    path = value["path"]
+    digest = value["sha256"]
+    if not _is_nonblank(path) or path != path.strip():
+        raise AssertionError(f"{label}: {key}.path must be non-blank")
+    if "\\" in path or "://" in path:
+        raise AssertionError(f"{label}: {key}.path must be project-relative")
+    pure = PurePosixPath(path)
+    if pure.is_absolute() or any(part in {"", ".", ".."} for part in path.split("/")):
+        raise AssertionError(f"{label}: {key}.path must be a safe project-relative path")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise AssertionError(f"{label}: {key}.sha256 must be 64 lowercase hex characters")
+
+
+def _result_tuple(data: dict) -> tuple[str, str, str]:
+    return (
+        data["last_review_result"],
+        data["final_verification"],
+        data["final_review_result"],
+    )
+
+
+def _validate_distinct_artifact_paths(data: dict, label: str) -> None:
+    fields_by_path: dict[str, list[str]] = {}
+    for key in ARTIFACT_FIELDS:
+        ref = data[key]
+        if ref is not None:
+            fields_by_path.setdefault(ref["path"], []).append(key)
+    for path, fields in fields_by_path.items():
+        if len(fields) == 1:
+            continue
+        if (
+            set(fields) == {"attempt_report_artifact", "last_review_artifact"}
+            and data["lifecycle_state"] == "blocked"
+            and _result_tuple(data) == ("blocked", "pending", "pending")
+            and data["attempt_report_artifact"] == data["last_review_artifact"]
+        ):
+            continue
+        raise AssertionError(
+            f"{label}: evidence artifact paths must be distinct by role: {path} used by {fields}"
+        )
 
 
 def validate_handoff_contract(data: dict, label: str) -> None:
@@ -150,16 +262,20 @@ def validate_handoff_contract(data: dict, label: str) -> None:
         "schema_version", "change_id", "mode", "approval_status",
         "risk_profile", "batch_profile", "current_batch", "planned_batches",
         "attempt", "contract_revision", "lifecycle_state",
-        "last_review_result", "blocked_reason", "blocker_owner",
-        "resume_condition", "final_verification", "final_review_result",
-        "executor", "governor",
+        "attempt_report_artifact", "last_review_result", "last_review_artifact",
+        "blocked_reason", "blocker_owner", "resume_condition",
+        "final_verification", "final_verification_artifact",
+        "final_review_result", "final_review_artifact", "executor", "governor",
         "next_owner", "step_critical", "final_critical",
         "business_acceptance", "stop_conditions", "verification_strategy",
         "readonly_fields",
     }
     missing = sorted(required - set(data))
+    unexpected = sorted(set(data) - required)
     if missing:
         raise AssertionError(f"{label}: missing contract fields: {missing}")
+    if unexpected:
+        raise AssertionError(f"{label}: unexpected contract fields: {unexpected}")
     if data["schema_version"] != SCHEMA_VERSION:
         raise AssertionError(f"{label}: schema_version must be {SCHEMA_VERSION}")
     enums = {
@@ -173,8 +289,8 @@ def validate_handoff_contract(data: dict, label: str) -> None:
         "lifecycle_state": LIFECYCLE_STATES,
         "last_review_result": REVIEW_RESULTS,
         "blocker_owner": BLOCKER_OWNERS,
-        "final_verification": FINAL_VERIFICATION_RESULTS,
-        "final_review_result": FINAL_REVIEW_RESULTS,
+        "final_verification": FINAL_RESULTS,
+        "final_review_result": FINAL_RESULTS,
     }
     for key, allowed in enums.items():
         if data[key] not in allowed:
@@ -195,33 +311,34 @@ def validate_handoff_contract(data: dict, label: str) -> None:
         raise AssertionError(f"{label}: execution contract must be approved")
     if data["mode"] == "direct-change" and data["approval_status"] not in {"not-required", "approved"}:
         raise AssertionError(f"{label}: direct-change execution contract has invalid approval")
+
     acceptance = data["business_acceptance"]
-    if not isinstance(acceptance, dict):
-        raise AssertionError(f"{label}: business_acceptance must be a mapping")
-    for key in ("unit", "pipeline", "api", "real_business"):
-        if acceptance.get(key) not in BUSINESS_ACCEPTANCE:
+    acceptance_keys = {"unit", "pipeline", "api", "real_business"}
+    if not isinstance(acceptance, dict) or set(acceptance) != acceptance_keys:
+        raise AssertionError(f"{label}: business_acceptance must contain exactly {sorted(acceptance_keys)}")
+    for key in acceptance_keys:
+        if acceptance[key] not in BUSINESS_ACCEPTANCE:
             raise AssertionError(f"{label}: invalid business_acceptance.{key}")
-    for key in ("step_critical", "final_critical"):
-        if not isinstance(data[key], list) or not all(isinstance(item, str) for item in data[key]):
-            raise AssertionError(f"{label}: {key} must be a string list")
-        if data["risk_profile"] in {"standard", "strict"} and not data[key]:
-            raise AssertionError(f"{label}: {key} must be a non-empty string list")
-    if not isinstance(data["stop_conditions"], list) or not data["stop_conditions"] or not all(
-        isinstance(item, str) for item in data["stop_conditions"]
-    ):
-        raise AssertionError(f"{label}: stop_conditions must be a non-empty string list")
+    for key in ("step_critical", "final_critical", "stop_conditions"):
+        _validate_string_list(data[key], key, label)
     strategy = data["verification_strategy"]
-    if not isinstance(strategy, dict) or not all(
-        isinstance(strategy.get(key), str) and strategy[key]
-        for key in ("step", "final")
+    if not isinstance(strategy, dict) or set(strategy) != {"step", "final"} or not all(
+        _is_nonblank(strategy[key]) for key in ("step", "final")
     ):
-        raise AssertionError(f"{label}: verification_strategy must be a step/final string mapping")
+        raise AssertionError(f"{label}: verification_strategy must be a non-blank step/final string mapping")
     readonly = data["readonly_fields"]
-    expected_readonly = IMMUTABLE_FIELDS
-    if not isinstance(readonly, list) or not expected_readonly.issubset(readonly):
-        raise AssertionError(f"{label}: readonly_fields is incomplete")
+    if (
+        not isinstance(readonly, list)
+        or not all(isinstance(item, str) for item in readonly)
+        or len(readonly) != len(set(readonly))
+        or set(readonly) != IMMUTABLE_FIELDS
+    ):
+        raise AssertionError(f"{label}: readonly_fields must exactly match immutable fields without duplicates")
 
     state = data["lifecycle_state"]
+    result_tuple = _result_tuple(data)
+    if result_tuple not in STATE_TUPLES[state]:
+        raise AssertionError(f"{label}: invalid result tuple for {state}")
     expected_owners = {
         "ready-for-brief": {"codex-brief-antigravity-review"},
         "ready-for-execution": {"external-agent"},
@@ -233,100 +350,360 @@ def validate_handoff_contract(data: dict, label: str) -> None:
     }
     if data["next_owner"] not in expected_owners[state]:
         raise AssertionError(f"{label}: invalid next_owner for {state}")
-    if state != "blocked" and any(
-        data[key] not in {None, "none"}
-        for key in ("blocked_reason", "blocker_owner", "resume_condition")
-    ):
-        raise AssertionError(f"{label}: non-blocked state must clear blocker fields")
-    if state in {"ready-for-execution", "ready-for-review"} and data["last_review_result"] != "not-run":
-        raise AssertionError(f"{label}: active attempt requires last_review_result not-run")
-    if state in {"ready-for-brief", "ready-for-execution", "ready-for-review"} and (
-        data["final_verification"] != "pending" or data["final_review_result"] != "pending"
-    ):
-        raise AssertionError(f"{label}: pre-final states require pending final gates")
-    if state == "needs-fix" and data["last_review_result"] != "fail":
-        raise AssertionError(f"{label}: needs-fix requires fail review")
+
     if state == "blocked":
-        if data["last_review_result"] != "blocked":
-            raise AssertionError(f"{label}: blocked review result is required")
-        if data["blocker_owner"] == "none" or data["blocked_reason"] in {None, "none"}:
-            raise AssertionError(f"{label}: blocked requires blocker owner and reason")
-        if data["resume_condition"] in {None, "none"}:
-            raise AssertionError(f"{label}: blocked requires resume_condition")
-    if state == "awaiting-final-verification":
-        if data["current_batch"] != data["planned_batches"]:
-            raise AssertionError(f"{label}: awaiting-final-verification requires final batch")
-        if (
-            data["last_review_result"] != "pass"
-            or data["final_verification"] != "pending"
-            or data["final_review_result"] != "pending"
+        if not _is_nonblank(data["blocked_reason"]):
+            raise AssertionError(f"{label}: blocked_reason must be non-blank")
+        if data["blocker_owner"] == "none":
+            raise AssertionError(f"{label}: blocked requires blocker_owner")
+        if not _is_nonblank(data["resume_condition"]):
+            raise AssertionError(f"{label}: resume_condition must be non-blank")
+    elif data["blocked_reason"] is not None or data["blocker_owner"] != "none" or data["resume_condition"] is not None:
+        raise AssertionError(f"{label}: non-blocked state must clear blocker fields")
+
+    report_required = state in {
+        "ready-for-review", "needs-fix",
+        "awaiting-final-verification", "complete",
+    } or (state == "ready-for-brief" and data["last_review_result"] == "pass")
+    _validate_artifact_ref(data["attempt_report_artifact"], report_required, "attempt_report_artifact", label)
+    report_forbidden = state == "ready-for-execution" or (
+        state == "ready-for-brief" and data["last_review_result"] == "not-run"
+    )
+    if report_forbidden and data["attempt_report_artifact"] is not None:
+        raise AssertionError(f"{label}: attempt_report_artifact must be null before a Report exists")
+    _validate_artifact_ref(
+        data["last_review_artifact"],
+        data["last_review_result"] != "not-run",
+        "last_review_artifact",
+        label,
+    )
+    if data["last_review_result"] == "not-run" and data["last_review_artifact"] is not None:
+        raise AssertionError(f"{label}: last_review_artifact must be null while Review is not-run")
+    _validate_artifact_ref(
+        data["final_verification_artifact"],
+        data["final_verification"] != "pending",
+        "final_verification_artifact",
+        label,
+    )
+    if data["final_verification"] == "pending" and data["final_verification_artifact"] is not None:
+        raise AssertionError(f"{label}: final_verification_artifact must be null while pending")
+    _validate_artifact_ref(
+        data["final_review_artifact"],
+        data["final_review_result"] != "pending",
+        "final_review_artifact",
+        label,
+    )
+    if data["final_review_result"] == "pending" and data["final_review_artifact"] is not None:
+        raise AssertionError(f"{label}: final_review_artifact must be null while pending")
+    if state in {"awaiting-final-verification", "complete"} and data["current_batch"] != data["planned_batches"]:
+        raise AssertionError(f"{label}: final states require final batch")
+    if state in {"needs-fix", "blocked"} and result_tuple[0] == "pass" and data["current_batch"] != data["planned_batches"]:
+        raise AssertionError(f"{label}: final-gate failure or block requires final batch")
+    _validate_distinct_artifact_paths(data, label)
+
+
+def _transition_artifact_field(before: dict, after: dict) -> str | None:
+    before_state = before["lifecycle_state"]
+    after_state = after["lifecycle_state"]
+    if before_state == "ready-for-execution" and after_state == "ready-for-review":
+        return "attempt_report_artifact"
+    if before_state == "ready-for-review":
+        return "last_review_artifact"
+    if before_state in {"ready-for-brief", "ready-for-execution", "needs-fix"} and after_state == "blocked":
+        return "last_review_artifact"
+    if before_state == "awaiting-final-verification":
+        if _result_tuple(before) == ("pass", "pending", "pending") and after_state in {
+            "awaiting-final-verification", "needs-fix", "blocked",
+        }:
+            return "final_verification_artifact"
+        if _result_tuple(before) == ("pass", "pass", "pending") and after_state in {
+            "complete", "needs-fix", "blocked",
+        }:
+            return "final_review_artifact"
+    return None
+
+
+def validate_evidence_artifacts(
+    data: dict,
+    artifact_root: Path,
+    label: str,
+    previous: dict | None = None,
+    previous_status_sha256: str | None = None,
+) -> None:
+    root = artifact_root.resolve()
+    if not root.is_dir():
+        raise AssertionError(f"{label}: artifact root is not a directory: {root}")
+    manifests: dict[str, dict] = {}
+    for key in ARTIFACT_FIELDS:
+        ref = data.get(key)
+        if ref is None:
+            continue
+        _validate_artifact_ref(ref, True, key, label)
+        target = (root / ref["path"]).resolve()
+        try:
+            target.relative_to(root)
+        except ValueError as exc:
+            raise AssertionError(f"{label}: {key} resolves outside artifact root") from exc
+        if not target.is_file() or target.stat().st_size == 0:
+            raise AssertionError(f"{label}: {key} file must exist and be non-empty: {target}")
+        digest = hashlib.sha256()
+        with target.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        if digest.hexdigest() != ref["sha256"]:
+            raise AssertionError(f"{label}: {key} sha256 mismatch")
+        manifest = extract_evidence_manifest(target.read_text(encoding="utf-8"), f"{label}:{key}")
+        expected_fields = {
+            "evidence_schema_version", "evidence_role", "evidence_result", "change_id",
+            "current_batch", "attempt", "contract_revision", "canonical_sha256",
+        }
+        if set(manifest) != expected_fields:
+            raise AssertionError(
+                f"{label}: {key} evidence manifest must contain exactly {sorted(expected_fields)}"
+            )
+        if manifest["evidence_schema_version"] != EVIDENCE_SCHEMA_VERSION:
+            raise AssertionError(f"{label}: {key} has invalid evidence schema version")
+        if manifest["evidence_role"] not in EVIDENCE_ROLES:
+            raise AssertionError(f"{label}: {key} has invalid evidence role")
+        if manifest["evidence_result"] not in EVIDENCE_RESULTS:
+            raise AssertionError(f"{label}: {key} has invalid evidence result")
+        if manifest["change_id"] != data["change_id"]:
+            raise AssertionError(f"{label}: {key} change_id does not match canonical status")
+        for coordinate in ("current_batch", "attempt", "contract_revision"):
+            _require_positive_int(manifest, coordinate, f"{label}:{key}")
+        if not isinstance(manifest["canonical_sha256"], str) or not re.fullmatch(
+            r"[0-9a-f]{64}", manifest["canonical_sha256"]
         ):
-            raise AssertionError(f"{label}: awaiting-final-verification requires batch review pass and pending final gates")
-        if data["next_owner"] != "openspec-superpower-change":
-            raise AssertionError(f"{label}: awaiting-final-verification must return to router")
-    if state == "complete":
-        if data["current_batch"] != data["planned_batches"]:
-            raise AssertionError(f"{label}: complete requires final batch")
-        if (
-            data["last_review_result"] != "pass"
-            or data["final_verification"] != "pass"
-            or data["final_review_result"] != "pass"
+            raise AssertionError(f"{label}: {key} canonical_sha256 must be 64 lowercase hex characters")
+        if manifest["contract_revision"] >= data["contract_revision"]:
+            raise AssertionError(f"{label}: {key} must reference an earlier canonical revision")
+        manifests[key] = manifest
+
+    batch_blocked = (
+        data["lifecycle_state"] == "blocked"
+        and _result_tuple(data) == ("blocked", "pending", "pending")
+    )
+    role_rules = {
+        "attempt_report_artifact": (
+            {"attempt-report", "timeout-audit"} if batch_blocked else {"attempt-report"}
+        ),
+        "last_review_artifact": (
+            {"batch-review", "preflight-review", "timeout-audit"}
+            if batch_blocked else {"batch-review"}
+        ),
+        "final_verification_artifact": {"final-verification"},
+        "final_review_artifact": {"final-review"},
+    }
+    result_fields = {
+        "last_review_artifact": "last_review_result",
+        "final_verification_artifact": "final_verification",
+        "final_review_artifact": "final_review_result",
+    }
+    for key, manifest in manifests.items():
+        if manifest["evidence_role"] not in role_rules[key]:
+            raise AssertionError(f"{label}: {key} evidence role does not match artifact field")
+        result_field = result_fields.get(key)
+        if result_field and manifest["evidence_result"] != data[result_field]:
+            raise AssertionError(f"{label}: {key} evidence result does not match canonical status")
+        if manifest["evidence_role"] in {"preflight-review", "timeout-audit"} and (
+            not batch_blocked or manifest["evidence_result"] != "blocked"
         ):
-            raise AssertionError(f"{label}: complete requires batch review, final review, and final verification pass")
-        if data["next_owner"] != "user":
-            raise AssertionError(f"{label}: complete requires next_owner user")
-    elif data["final_verification"] == "pass" or data["final_review_result"] == "pass":
-        raise AssertionError(f"{label}: final pass results are valid only when complete")
+            raise AssertionError(
+                f"{label}: {manifest['evidence_role']} is only valid for a blocked batch state"
+            )
+
+    expected_batch = data["current_batch"]
+    if data["lifecycle_state"] == "ready-for-brief" and data["last_review_result"] == "pass":
+        expected_batch -= 1
+    if expected_batch < 1:
+        raise AssertionError(f"{label}: completed-batch evidence has no prior batch")
+    for key, manifest in manifests.items():
+        if manifest["current_batch"] != expected_batch:
+            raise AssertionError(f"{label}: {key} does not belong to the required batch")
+    if data["lifecycle_state"] == "ready-for-brief" and data["last_review_result"] == "pass":
+        attempts = {manifest["attempt"] for manifest in manifests.values()}
+        if len(attempts) != 1:
+            raise AssertionError(f"{label}: completed batch artifacts must bind one attempt")
+    else:
+        expected_attempt = data["attempt"] - 1 if data["lifecycle_state"] == "needs-fix" else data["attempt"]
+        if expected_attempt < 1:
+            raise AssertionError(f"{label}: needs-fix evidence requires a prior attempt")
+        for key, manifest in manifests.items():
+            if manifest["attempt"] != expected_attempt:
+                raise AssertionError(f"{label}: {key} does not belong to the required attempt")
+
+    report_manifest = manifests.get("attempt_report_artifact")
+    review_manifest = manifests.get("last_review_artifact")
+    if report_manifest and review_manifest and review_manifest["evidence_role"] == "batch-review":
+        if report_manifest["contract_revision"] >= review_manifest["contract_revision"]:
+            raise AssertionError(f"{label}: batch Review must follow the Report source revision")
+    verification_manifest = manifests.get("final_verification_artifact")
+    final_review_manifest = manifests.get("final_review_artifact")
+    if verification_manifest and final_review_manifest:
+        if verification_manifest["contract_revision"] >= final_review_manifest["contract_revision"]:
+            raise AssertionError(f"{label}: final Review must follow final verification in a later revision")
+
+    report_ref = data.get("attempt_report_artifact")
+    review_ref = data.get("last_review_artifact")
+    if report_ref is not None and review_ref is not None and report_ref["path"] == review_ref["path"]:
+        if report_ref != review_ref or manifests["attempt_report_artifact"]["evidence_role"] != "timeout-audit":
+            raise AssertionError(
+                f"{label}: only one identical timeout-audit may serve as Report and Review evidence"
+            )
+
+    if previous is not None:
+        if previous_status_sha256 is None or not re.fullmatch(r"[0-9a-f]{64}", previous_status_sha256):
+            raise AssertionError(f"{label}: previous canonical status SHA-256 is required")
+        validate_transition(previous, data, f"{label}:previous-transition")
+        transition_key = _transition_artifact_field(previous, data)
+        if transition_key is not None:
+            manifest = manifests.get(transition_key)
+            if manifest is None:
+                raise AssertionError(f"{label}: transition requires {transition_key}")
+            if manifest["contract_revision"] != previous["contract_revision"]:
+                raise AssertionError(f"{label}: transition evidence has the wrong source revision")
+            if manifest["canonical_sha256"] != previous_status_sha256:
+                raise AssertionError(f"{label}: transition evidence has the wrong canonical SHA-256")
+            if manifest["current_batch"] != previous["current_batch"]:
+                raise AssertionError(f"{label}: transition evidence has the wrong source batch")
+            if manifest["attempt"] != previous["attempt"]:
+                raise AssertionError(f"{label}: transition evidence has the wrong source attempt")
+    elif data["lifecycle_state"] == "complete":
+        raise AssertionError(f"{label}: complete runtime validation requires previous canonical status")
 
 
 def validate_transition(before: dict, after: dict, label: str) -> None:
     validate_handoff_contract(before, f"{label}:before")
     validate_handoff_contract(after, f"{label}:after")
-    if before["lifecycle_state"] == "complete":
+    current_state = before["lifecycle_state"]
+    next_state = after["lifecycle_state"]
+    if current_state == "complete":
         raise AssertionError(f"{label}: complete is terminal")
     for key in IMMUTABLE_FIELDS:
         if before[key] != after[key]:
             raise AssertionError(f"{label}: readonly field changed: {key}")
     if after["contract_revision"] != before["contract_revision"] + 1:
         raise AssertionError(f"{label}: contract_revision must increment by one")
-    current_state = before["lifecycle_state"]
-    next_state = after["lifecycle_state"]
     if next_state not in ALLOWED_TRANSITIONS[current_state]:
         raise AssertionError(f"{label}: invalid lifecycle transition")
-    special_attempt_transitions = {
-        ("ready-for-review", "needs-fix"),
-        ("ready-for-review", "ready-for-brief"),
-        ("awaiting-final-verification", "needs-fix"),
-    }
-    if current_state == "blocked" and next_state != "blocked":
-        special_attempt_transitions.add((current_state, next_state))
-    if (current_state, next_state) not in special_attempt_transitions:
-        if after["current_batch"] != before["current_batch"] or after["attempt"] != before["attempt"]:
-            raise AssertionError(f"{label}: transition must keep the same batch and attempt")
     if next_state in {"needs-fix", "blocked"} and after["current_batch"] != before["current_batch"]:
         raise AssertionError(f"{label}: FAIL/BLOCKED must stay on the same batch")
-    if next_state == "needs-fix":
-        if after["attempt"] != before["attempt"] + 1:
-            raise AssertionError(f"{label}: FAIL must increment attempt")
-        if after["last_review_result"] != "fail":
-            raise AssertionError(f"{label}: needs-fix requires fail review")
-    if current_state == "blocked" and next_state != "blocked":
-        if after["current_batch"] != before["current_batch"]:
-            raise AssertionError(f"{label}: resumed work must stay on the same batch")
-        if after["attempt"] != before["attempt"] + 1:
-            raise AssertionError(f"{label}: resumed work must use a fresh attempt")
+    if current_state == "blocked" and next_state == "blocked":
+        if after["current_batch"] != before["current_batch"] or after["attempt"] != before["attempt"]:
+            raise AssertionError(f"{label}: blocked self-transition must keep batch and attempt")
+        if _result_tuple(after) != _result_tuple(before):
+            raise AssertionError(f"{label}: blocked self-transition must keep the result tuple")
+        for key in ARTIFACT_FIELDS:
+            if after[key] != before[key]:
+                raise AssertionError(f"{label}: blocked self-transition cannot rewrite evidence: {key}")
+    elif next_state == "blocked":
+        if current_state == "awaiting-final-verification":
+            before_tuple = _result_tuple(before)
+            after_tuple = _result_tuple(after)
+            expected = {
+                ("pass", "pending", "pending"): ("pass", "blocked", "pending"),
+                ("pass", "pass", "pending"): ("pass", "pass", "blocked"),
+            }
+            if expected.get(before_tuple) != after_tuple:
+                raise AssertionError(
+                    f"{label}: final Review requires persisted final verification before BLOCKED"
+                )
+        elif _result_tuple(after) != ("blocked", "pending", "pending"):
+            raise AssertionError(f"{label}: batch work must use the batch BLOCKED tuple")
+
     if current_state == "ready-for-review" and next_state == "ready-for-brief":
         if before["current_batch"] >= before["planned_batches"]:
             raise AssertionError(f"{label}: final PASS must hand back to router")
         if after["current_batch"] != before["current_batch"] + 1 or after["attempt"] != 1:
             raise AssertionError(f"{label}: non-final PASS must advance one batch and reset attempt")
-        if after["last_review_result"] != "pass":
-            raise AssertionError(f"{label}: batch advance requires Review PASS")
-    if next_state == "awaiting-final-verification":
+        if _result_tuple(after) != ("pass", "pending", "pending"):
+            raise AssertionError(f"{label}: non-final promotion requires Review PASS and review evidence")
+    elif next_state == "needs-fix":
+        if after["current_batch"] != before["current_batch"] or after["attempt"] != before["attempt"] + 1:
+            raise AssertionError(f"{label}: FAIL must stay on the same batch and increment attempt")
+    elif current_state == "blocked" and next_state != "blocked":
+        if after["current_batch"] != before["current_batch"]:
+            raise AssertionError(f"{label}: resumed work must stay on the same batch")
+        if next_state == "awaiting-final-verification":
+            if after["attempt"] != before["attempt"]:
+                raise AssertionError(f"{label}: final-gate recovery keeps the implementation attempt")
+            before_tuple = _result_tuple(before)
+            after_tuple = _result_tuple(after)
+            valid_resume = (
+                before_tuple == ("pass", "blocked", "pending")
+                and after_tuple == ("pass", "pending", "pending")
+                and after["final_verification_artifact"] is None
+            ) or (
+                before_tuple == ("pass", "pass", "blocked")
+                and after_tuple == ("pass", "pass", "pending")
+                and after["final_verification_artifact"] == before["final_verification_artifact"]
+            )
+            if not valid_resume:
+                raise AssertionError(f"{label}: invalid final-gate recovery")
+            for key in ("attempt_report_artifact", "last_review_artifact"):
+                if after[key] != before[key]:
+                    raise AssertionError(f"{label}: final-gate recovery cannot rewrite {key}")
+        elif after["attempt"] != before["attempt"] + 1:
+            raise AssertionError(f"{label}: batch recovery must use a fresh attempt")
+    elif after["current_batch"] != before["current_batch"] or after["attempt"] != before["attempt"]:
+        raise AssertionError(f"{label}: transition must keep the same batch and attempt")
+
+    if current_state == "ready-for-review" and next_state == "awaiting-final-verification":
         if before["current_batch"] != before["planned_batches"]:
             raise AssertionError(f"{label}: only final batch can hand back")
-        if after["current_batch"] != before["current_batch"]:
-            raise AssertionError(f"{label}: final handback keeps the same batch")
+        if _result_tuple(after) != ("pass", "pending", "pending"):
+            raise AssertionError(f"{label}: final handback requires batch Review PASS")
+    if current_state == "ready-for-review" and next_state in {
+        "ready-for-brief", "needs-fix", "blocked", "awaiting-final-verification",
+    }:
+        expected_tuples = {
+            "ready-for-brief": ("pass", "pending", "pending"),
+            "needs-fix": ("fail", "pending", "pending"),
+            "blocked": ("blocked", "pending", "pending"),
+            "awaiting-final-verification": ("pass", "pending", "pending"),
+        }
+        if _result_tuple(after) != expected_tuples[next_state]:
+            raise AssertionError(f"{label}: batch decision has an invalid Review result tuple")
+        if after["attempt_report_artifact"] != before["attempt_report_artifact"]:
+            raise AssertionError(f"{label}: batch Review cannot replace the reviewed Report artifact")
+    if current_state == "awaiting-final-verification" and next_state in {"needs-fix", "blocked"}:
+        before_tuple = _result_tuple(before)
+        after_tuple = _result_tuple(after)
+        expected = {
+            ("pass", "pending", "pending"): {
+                "needs-fix": ("pass", "fail", "pending"),
+                "blocked": ("pass", "blocked", "pending"),
+            },
+            ("pass", "pass", "pending"): {
+                "needs-fix": ("pass", "pass", "fail"),
+                "blocked": ("pass", "pass", "blocked"),
+            },
+        }
+        if expected.get(before_tuple, {}).get(next_state) != after_tuple:
+            raise AssertionError(
+                f"{label}: final Review requires persisted final verification in a prior revision"
+            )
+        for key in ("attempt_report_artifact", "last_review_artifact"):
+            if after[key] != before[key]:
+                raise AssertionError(f"{label}: final gate cannot rewrite {key}")
+        if before_tuple == ("pass", "pass", "pending") and (
+            after["final_verification_artifact"] != before["final_verification_artifact"]
+        ):
+            raise AssertionError(f"{label}: final Review cannot replace verification evidence")
+    if current_state == "awaiting-final-verification" and next_state == "awaiting-final-verification":
+        if _result_tuple(before) != ("pass", "pending", "pending") or _result_tuple(after) != ("pass", "pass", "pending"):
+            raise AssertionError(f"{label}: awaiting self-transition only persists final verification PASS")
+        for key in ("attempt_report_artifact", "last_review_artifact"):
+            if before[key] != after[key]:
+                raise AssertionError(f"{label}: final verification cannot rewrite {key}")
+    if next_state == "complete":
+        if _result_tuple(before) != ("pass", "pass", "pending"):
+            raise AssertionError(f"{label}: complete requires persisted final verification PASS")
+        if after["final_verification_artifact"] != before["final_verification_artifact"]:
+            raise AssertionError(f"{label}: final Review cannot replace verification evidence")
+        for key in ("attempt_report_artifact", "last_review_artifact"):
+            if after[key] != before[key]:
+                raise AssertionError(f"{label}: final Review cannot replace {key}")
 
 
 def validate_frontmatter(skill: str) -> None:
@@ -342,9 +719,30 @@ def validate_frontmatter(skill: str) -> None:
         raise AssertionError(f"SKILL.md: frontmatter keys must be name, description only; got {keys}")
 
 
+def validate_reference_links(root: Path, skill: str) -> None:
+    for link in re.findall(r"`(references/[^`]+\.md)`", skill):
+        if not (root / link).is_file():
+            raise AssertionError(f"SKILL.md: linked reference missing: {link}")
+
+
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("root", nargs="?", default=".")
+    parser.add_argument("--status", type=Path)
+    parser.add_argument("--artifact-root", type=Path)
+    parser.add_argument("--previous-status", type=Path)
+    args = parser.parse_args(argv[1:])
+    if bool(args.status) != bool(args.artifact_root):
+        parser.error("--status and --artifact-root must be provided together")
+    if args.previous_status and not args.status:
+        parser.error("--previous-status requires --status and --artifact-root")
+    return args
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv if argv is None else argv
-    root = Path(argv[1]).resolve() if len(argv) > 1 else Path.cwd().resolve()
+    args = parse_args(argv)
+    root = Path(args.root).resolve()
     print(f"[i] Validating project layout in: {root}")
     for directory in ("agents", "references", "scripts"):
         if not (root / directory).is_dir():
@@ -352,6 +750,7 @@ def main(argv: list[str] | None = None) -> int:
 
     skill = read(root / "SKILL.md")
     metadata = yaml_load(read(root / "agents" / "openai.yaml"))
+    handoff = read(root / "references" / "handoff-contract.md")
     validate_frontmatter(skill)
     interface = metadata.get("interface") if isinstance(metadata, dict) else None
     if not isinstance(interface, dict):
@@ -367,22 +766,30 @@ def main(argv: list[str] | None = None) -> int:
     required_templates = {
         "brief-template.md": (
             "Canonical Handoff Contract", "attempt-<AA>", "contract_revision",
-            "函数级变更地图", "业务验收标准", "外部 Agent 不得修改 canonical",
+            "canonical SHA-256", "Preflight Review", "函数级变更地图",
+            "外部 Agent 不得修改 canonical",
         ),
         "report-template.md": (
             "Execution Report", "Attempt <AA>", "Canonical status path",
-            "建议状态", "外部 Agent 不得直接编辑 canonical",
+            "canonical SHA-256", "建议状态", "外部 Agent 不得直接编辑 canonical",
+            "COOP_EVIDENCE_MANIFEST_START", "evidence_role: attempt-report",
+            "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
         ),
         "review-template.md": (
             "# Review Result: PASS / FAIL / BLOCKED", "Required State Transition",
             "needs-fix", "resume_condition", "must be reviewed again",
-            "awaiting-final-verification",
+            "awaiting-final-verification", "from/to revision", "actionable finding",
+            "COOP_EVIDENCE_MANIFEST_START", "evidence_role: batch-review",
+            "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
         ),
         "agy-dispatch-template.md": (
-            "attempt-<AA>", "Canonical status", "不得修改 canonical status",
+            "attempt-<AA>", "Canonical status", "canonical SHA-256",
+            "不得修改 canonical status", "attempt-report", "evidence manifest",
         ),
         "timeout-audit-template.md": (
             "Attempt <AA>", "resume_condition", "fresh Review",
+            "COOP_EVIDENCE_MANIFEST_START", "evidence_role: timeout-audit",
+            "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
         ),
     }
     for filename, needles in required_templates.items():
@@ -394,15 +801,41 @@ def main(argv: list[str] | None = None) -> int:
         "Standalone Lightweight", "Handed-off External Execution",
         "Review and fix", "attempt-<AA>", "same batch", "needs-fix",
         "awaiting-final-verification", "openspec-superpower-change",
-        "temporary structured backup", "Major Self-Evolution",
+        "temporary structured backup", "Major Self-Evolution", "Preflight Review",
     ):
         require(skill, needle, "SKILL.md")
 
-    handoff_text = read(root / "references" / "handoff-contract.md")
-    contract = extract_handoff_contract(handoff_text, "handoff-contract.md")
+    contract = extract_handoff_contract(handoff, "handoff-contract.md")
     validate_handoff_contract(contract, "handoff-contract.md")
-    require(handoff_text, "must not embed another mutable block", "handoff-contract.md")
-    print("[✓] Validation succeeded: templates and lifecycle are compliant")
+    require(handoff, "must not embed another mutable block", "handoff-contract.md")
+    for needle in (
+        "COOP_EVIDENCE_MANIFEST_START", "evidence_role", "evidence_result",
+        "current_batch", "attempt", "contract_revision", "canonical_sha256",
+        "timeout-audit", "role-to-state binding", "result-to-status binding",
+    ):
+        require(handoff, needle, "handoff-contract.md")
+    if args.status:
+        status_path = args.status.resolve()
+        status = extract_handoff_contract(read(status_path), str(args.status))
+        validate_handoff_contract(status, str(args.status))
+        previous = None
+        previous_sha256 = None
+        if args.previous_status:
+            previous_path = args.previous_status.resolve()
+            previous_text = read(previous_path)
+            previous = extract_handoff_contract(previous_text, str(args.previous_status))
+            validate_handoff_contract(previous, str(args.previous_status))
+            validate_evidence_artifacts(previous, args.artifact_root, str(args.previous_status))
+            previous_sha256 = hashlib.sha256(previous_path.read_bytes()).hexdigest()
+        validate_evidence_artifacts(
+            status,
+            args.artifact_root,
+            str(args.status),
+            previous=previous,
+            previous_status_sha256=previous_sha256,
+        )
+        print(f"Runtime Handoff status valid: {args.status}")
+    print("[✓] Validation succeeded: templates, evidence, and lifecycle are compliant")
     return 0
 
 

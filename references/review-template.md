@@ -4,6 +4,29 @@
 日志及版本：YYYY-MM-DD v1
 批次及尝试：Step <NN> Attempt <AA>
 
+<!-- COOP_EVIDENCE_MANIFEST_START -->
+```yaml
+evidence_schema_version: 1
+evidence_role: batch-review
+evidence_result: pass
+change_id: <change-id>
+current_batch: <NN>
+attempt: <AA>
+contract_revision: <reviewed canonical revision>
+canonical_sha256: <reviewed canonical SHA-256>
+```
+<!-- COOP_EVIDENCE_MANIFEST_END -->
+
+按实际阶段将 `evidence_role` 设为 `batch-review`、
+`preflight-review` 或 `final-review`，并让 `evidence_result` 与
+最终 `PASS` / `FAIL` / `BLOCKED`（小写）一致。保存并计算 SHA-256
+后不得改写。`contract_revision` 和 `canonical_sha256` 指向本 Review
+实际读取的 transition 前 canonical status。
+
+Preflight 只使用 `PASS`/`BLOCKED`。仅 `BLOCKED` Preflight 以
+`preflight-review: blocked` 绑定 canonical `blocked` 状态；Preflight
+PASS 只授权 dispatch，不能充当 `batch-review` 或批次完成证据。
+
 ## Summary
 
 一句话结论。必须说明是完整通过、执行失败，还是证据/依赖阻塞。
@@ -19,6 +42,10 @@
 ## Findings
 
 按严重程度列问题：
+
+任何 actionable finding（无论严重级别）都必须修正、重新验证并再次
+Review。非阻塞观察只有在明确记录为 accepted residual risk，并注明 owner
+或决策时，才不属于未解决 finding。
 
 ### Critical
 
@@ -82,14 +109,25 @@ git status --short
 | 字段 | Brief | Report/Status | 结论 |
 |---|---|---|---|
 | `change_id` | `<value>` | `<value>` | PASS/FAIL/BLOCKED |
-| `schema_version` | `2` | `2` | PASS/FAIL/BLOCKED |
+| `schema_version` | `3` | `3` | PASS/FAIL/BLOCKED |
 | Execution revision | Brief `<n>` | Report `<n>` | PASS/FAIL/BLOCKED |
+| Execution canonical SHA-256 | Brief `<hash>` | Report/recomputed `<hash>` | PASS/FAIL/BLOCKED |
 | Review revision | expected `<n+1>` | canonical status `<n+1>` | PASS/FAIL/BLOCKED |
 | `risk_profile` | compact/standard/strict | compact/standard/strict | PASS/FAIL/BLOCKED |
 | `current_batch` | `<n>` | `<n>` | PASS/FAIL/BLOCKED |
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` | `<AA>` / `<state>` | PASS/FAIL/BLOCKED |
 | `next_owner` | `<owner>` | `<owner>` | PASS/FAIL/BLOCKED |
 | `verification_strategy` | `<summary>` | `<summary>` | PASS/FAIL/BLOCKED |
+
+Transition evidence（from/to revision 与 SHA-256）：
+
+| 字段 | 值 |
+|---|---|
+| from/to revision | `<from>` / `<to>` |
+| from/to canonical SHA-256 | `<from hash>` / `<to hash>` |
+| transition validator result | PASS / FAIL / BLOCKED |
+| `attempt_report_artifact` path / SHA-256 | `<path>` / `<hash>` |
+| `last_review_artifact` path / SHA-256 | `<path>` / `<hash after this Review is written>` |
 
 ## 5. 子问题覆盖矩阵
 
@@ -132,6 +170,9 @@ git status --short
 - 最终 `PASS`：保持最终 batch，设置 `awaiting-final-verification`、
   `final_verification: pending`、`final_review_result: pending`、
   `next_owner: openspec-superpower-change`；不得声明任务完成。
+- Router 必须先以同状态新 revision 持久化 `final_verification: pass` 及
+  hashed manifest，再执行最终 Review；不得把两个 final gate 原子化为
+  `complete`。
 - 每次状态变更：`contract_revision + 1`。
 
 ## Final Decision

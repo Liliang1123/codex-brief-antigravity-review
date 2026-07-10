@@ -1,7 +1,7 @@
 # Codex Brief / Antigravity Review 工作流优化设计
 
 文档类型：Skill 工作流优化设计
-日志及版本：2026-07-10 v1.0
+日志及版本：2026-07-10 v1.1（schema 3 证据绑定校正）
 
 ## 定位
 
@@ -28,7 +28,7 @@ transition ready-for-execution -> 写 attempt Brief -> dispatch
 
 产物路径带 `<NN>-attempt-<AA>`，保留失败、阻塞和超时历史。Report 的 PASS 只是执行者建议，只有 Codex Review PASS 才能推进；最终批次 PASS 不等于任务完成。
 
-## Schema v2 约束
+## Schema v3 约束
 
 - 执行合同只允许 `approved-implementation`、`direct-change` 或已批准 `self-evolution`。
 - `executor=external-agent`，`governor=codex-brief-antigravity-review`。
@@ -36,6 +36,10 @@ transition ready-for-execution -> 写 attempt Brief -> dispatch
 - 任何 profile 的 critical commands 和 stop conditions 都有明确类型。
 - `FAIL`/`BLOCKED` 不得推进 batch；普通 transition 不得跳 attempt/owner。
 - `complete` 要求 batch Review、final Review、final verification 全部 PASS，且为终态。
+- 四类 evidence reference 使用项目相对路径与 SHA-256；文件内 schema-1
+  manifest 绑定 role/result/change/batch/attempt/source revision/SHA-256。
+- Preflight 只使用 PASS/BLOCKED，不能替代 batch Review；`complete` 运行态
+  校验必须提供 actual previous status。
 
 ## 验证
 
@@ -48,4 +52,4 @@ transition ready-for-execution -> 写 attempt Brief -> dispatch
 - 回滚备份：`/private/tmp/two-codex-skills-self-evolution-20260710-064702/`。
 - runtime 同步、四份验证、19 个本仓测试和独立 Review 已通过。
 - 已提交并 push：`codex-brief-antigravity-review@c888eb0`。
-- 临时备份清理被本机安全 hook 拒绝，需手动执行：`rm -rf /private/tmp/two-codex-skills-self-evolution-20260710-064702`。
+- 临时备份已在验证和 push 完成后清理，无遗留备份待办。

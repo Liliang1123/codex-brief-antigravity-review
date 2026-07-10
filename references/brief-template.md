@@ -25,15 +25,20 @@ docs/agent-collab/<change-id>/status.md
 
 | 字段 | 值 |
 |---|---|
-| `schema_version` | `2` |
+| `schema_version` | `3` |
 | `contract_revision` | `<n>` |
 | `current_batch` / `planned_batches` | `<NN>/<total>` |
 | `attempt` | `<AA>` |
 | `lifecycle_state` | `ready-for-execution` |
+| canonical SHA-256 | `<64 lowercase hex>` |
 
 若 Contract 缺失、重复、过期、矛盾或不可解析，本 Brief 不得继续，必须交回 `openspec-superpower-change` 或用户。
 
-不可覆写字段：`mode`、`approval_status`、`risk_profile`。
+不可覆写字段：canonical `readonly_fields` 中的完整集合，而不只是
+`mode`、`approval_status`、`risk_profile`。
+
+Report 必须回显同一 execution revision 和 canonical SHA-256。Codex 在进入
+`ready-for-review` 前重新计算 canonical 文件哈希；不一致时必须 BLOCKED。
 
 ## 2.2 Evidence Profile
 
@@ -42,6 +47,28 @@ Profile：compact / standard / strict
 - compact：仅保留必要目标、allow-list、验证命令、报告路径和阻塞条件。
 - standard：必须包含函数级地图、数据合同、不变量、错误矩阵、TDD RED/GREEN、生产 wiring、业务验收层和 step-critical。
 - strict：必须保留安全/API/schema/迁移/回滚/真实业务链证据；mock 或单测不得替代明确要求的真实验收。
+
+所有 profile 的 `step_critical`、`final_critical` 和 `stop_conditions` 都必须
+至少包含一个非空白条目。
+
+## 2.3 Preflight Review
+
+Dispatch 前必须对本 Brief 当前 revision 执行 **Preflight Review**：
+
+- 合同/计划覆盖、占位符和范围；
+- allow-list、生产 wiring 与验收层；
+- 精确验证命令、证据等级、回滚和停止条件；
+- worktree/branch 决定及 Git 授权。
+
+结果：PASS / BLOCKED
+
+- `BLOCKED`：任何 actionable finding 都不得 dispatch；canonical 转为
+  `blocked`，新 attempt 修订 Brief 后重新 Preflight Review。Preflight
+  不使用 `FAIL`；`FAIL` 保留给已执行行为的实施 Review。写入独立
+  `preflight-review: blocked` manifest，并在替换 canonical 前使用
+  `--previous-status` 验证 proposed transition。
+- `PASS`：仅授权 dispatch，不是实施 Review 或完成证据。
+- Brief revision 未变化时不重复；发生任何语义修改后必须重跑。
 
 ## 3. 允许修改的文件
 
@@ -74,11 +101,11 @@ Profile：compact / standard / strict
 
 ### 备份要求（若允许修改 skill / 模板，必须创建结构化备份）
 
-- 临时备份目录：`/private/tmp/<backup-dir-name>/`（或 Brief 明确授权的位置）。
+- 临时备份目录：`${TMPDIR:-/tmp}/<backup-dir-name>/`（或 Brief 明确授权的位置）。
 - 结构规范：备份必须保留相对路径结构（例如 `codex-brief-antigravity-review/SKILL.md`），禁止使用扁平列表备份，以防回滚歧义。
 - 备份仅用于失败回滚，不作为历史版本。
-- 完成测试、验证和归档同步后必须删除临时备份、`.bak.*` 文件和 `/Users/elvis/.codex/skills/` 下可被发现的 `*.backup*` skill 目录。
-- 历史版本通过 `/Users/elvis/file/develop/opensource/openspec-superpower-change` 和 `/Users/elvis/file/develop/opensource/codex-brief-antigravity-review` 的 git history 管理。
+- 完成测试、验证和归档同步后必须删除临时备份、`.bak.*` 文件和 `${CODEX_HOME:-$HOME/.codex}/skills/` 下可被发现的 `*.backup*` skill 目录。
+- 历史版本通过配置的 `openspec-superpower-change` 和 `codex-brief-antigravity-review` source repository git history 管理。
 - 若验证失败或需要回滚，临时备份只保留到回滚/用户决策完成。
 
 ## 7. 需求来源
@@ -187,6 +214,7 @@ git diff --check -- <allowed files>
 - `git status --short` 前后状态
 - 验证命令与结果，区分 critical / supporting
 - Evidence：Commands / Artifacts / Key Assertions
+- canonical execution revision / SHA-256 与 Report artifact path / SHA-256
 - raw / summary 产物路径
 - 子问题覆盖矩阵
 - 业务验收结论，区分单元测试、管线测试、server/API、真实业务问题

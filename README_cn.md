@@ -15,6 +15,8 @@
 - 防止关键证明缺失时产生虚假 PASS。
 - `FAIL`/`BLOCKED` 保留 attempt 历史，修正/解阻后必须再 Review。
 - 只以 canonical `status.md` 保存共享状态，最终批次 PASS 回交总入口验证。
+- Dispatch 前对当前 revision 的 Brief 执行 Preflight Review。
+- schema 3 使用项目相对 Report/Review 路径和 SHA-256 指纹。
 
 ## 为什么需要它
 
@@ -49,6 +51,7 @@ Standalone：编写/优化 prompt 或只读 Review diff/Report -> 返回结论
 Handed-off：读取 canonical Handoff Contract
 -> 读取当前批次/attempt 的已批准计划
 -> 写 <NN>-attempt-<AA>-brief.md
+-> 绑定 canonical execution SHA-256 并 Preflight Review Brief
 -> 派发外部 Agent
 -> 要求 attempt Report 或 Abort Report
 -> 根据证据审计 Report 声明
@@ -115,6 +118,9 @@ Handed-off：读取 canonical Handoff Contract
 - 越界文件修改、破坏性 git 操作或回归仍可复现，结论为 `FAIL`。
 - 除非明确声明相关层不适用，否则单元测试不能单独证明 API、服务或真实业务成功。
 - 只有 `PASS` 才能推进批次指针或授权下一份 Brief。
+- 每个外部 evidence profile 都必须有非空 step/final critical 命令。
+- Report/Review 证据必须是项目相对路径、非空文件、SHA-256 匹配，并内嵌
+  schema 1 role/result/change/batch/attempt/source fingerprint manifest。
 
 ## 安装
 
@@ -130,10 +136,16 @@ cp -R codex-brief-antigravity-review "${CODEX_HOME:-$HOME/.codex}/skills/codex-b
 修改 Skill 后运行：
 
 ```bash
-"${PYTHON_BIN:-python3}" /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
+"${PYTHON_BIN:-python3}" "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py" /path/to/codex-brief-antigravity-review
 PYTHONDONTWRITEBYTECODE=1 python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /path/to/codex-brief-antigravity-review/tests -v
 ```
+
+运行时状态还可使用 `--status <status.md>` 和
+`--artifact-root <project-root>` 验证引用证据文件。
+引入证据的 transition 应增加 `--previous-status <canonical-status>`；
+`complete` 强制要求。proposed/previous 快照必须留在项目外，确保项目中仍
+只有一个 canonical Handoff marker block。
 
 `quick_validate.py` 需要 PyYAML；请通过 `PYTHON_BIN` 选择可用解释器。项目 validator 和测试会覆盖无 PyYAML fallback。
 

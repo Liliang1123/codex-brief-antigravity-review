@@ -17,6 +17,8 @@ It is intended for workflows where Codex should design, dispatch, and audit work
 - Prevents false PASS claims when critical proof is missing.
 - Preserves `FAIL`/`BLOCKED` attempt history and requires correction or recovery followed by another Review.
 - Uses canonical `status.md` for shared state and returns final batch `PASS` to the change gate for final verification.
+- Runs a current-revision Brief Preflight Review before dispatch.
+- Uses schema-3 project-relative Report/Review paths plus SHA-256 fingerprints.
 
 ## Why It Exists
 
@@ -51,6 +53,7 @@ Standalone: write/refine prompt or review diff/report -> return findings
 Handed-off: read canonical Handoff Contract
 -> read approved plan section for the current batch/attempt
 -> write <NN>-attempt-<AA>-brief.md
+-> bind canonical execution SHA-256 and Preflight Review the Brief
 -> dispatch external agent
 -> require attempt Report or Abort Report
 -> audit report claims against evidence
@@ -117,6 +120,10 @@ Handed-off: read canonical Handoff Contract
 - Forbidden-scope edits, destructive git operations, or still-reproducing regressions are `FAIL`.
 - Unit tests alone do not prove API, server, or real business success unless those layers are explicitly not applicable.
 - Only `PASS` may advance the batch pointer or authorize the next brief.
+- Every external profile requires non-blank step/final critical commands.
+- Report and Review evidence must be project-relative, non-empty, SHA-256
+  matched, and carry the schema-1 role/result/change/batch/attempt/source
+  fingerprint manifest.
 
 ## Installation
 
@@ -132,10 +139,16 @@ cp -R codex-brief-antigravity-review "${CODEX_HOME:-$HOME/.codex}/skills/codex-b
 Run validation after editing the skill:
 
 ```bash
-"${PYTHON_BIN:-python3}" /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py /path/to/codex-brief-antigravity-review
+"${PYTHON_BIN:-python3}" "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py" /path/to/codex-brief-antigravity-review
 PYTHONDONTWRITEBYTECODE=1 python3 /path/to/codex-brief-antigravity-review/scripts/validate_templates.py /path/to/codex-brief-antigravity-review
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s /path/to/codex-brief-antigravity-review/tests -v
 ```
+
+Runtime status validation additionally accepts `--status <status.md>` with
+`--artifact-root <project-root>` to verify referenced evidence files.
+Transitions that introduce evidence should add `--previous-status <canonical-status>`;
+`complete` requires it. Keep proposed/previous snapshots outside the project so
+there is still exactly one canonical Handoff marker block.
 
 `quick_validate.py` requires PyYAML; set `PYTHON_BIN` accordingly. The project validator and tests exercise the dependency-free fallback.
 

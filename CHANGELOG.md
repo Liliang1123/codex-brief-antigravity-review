@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.0] - 2026-07-10
+
+### Changed
+- Narrow implicit routing to non-state-changing review or an existing valid Handoff.
+- Add Brief Preflight Review and canonical execution SHA-256 consensus.
+- Upgrade Handoff governance to schema 3 with hashed Report/Review evidence.
+- Reject empty critical checks, blank blockers, unsafe evidence paths, and atomic final completion.
+- Expand adversarial lifecycle tests and bind runtime evidence to
+  role/result/batch/attempt/source fingerprints plus previous-status transitions.
+
 ## [1.0.0] - 2026-06-23
 
 ### Added

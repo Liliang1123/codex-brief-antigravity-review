@@ -1,6 +1,6 @@
 ---
 name: codex-brief-antigravity-review
-description: "Use when writing or refining Antigravity/Codex task prompts or briefs, reviewing diffs/reports/evidence, auditing PASS/FAIL/BLOCKED decisions, or governing an already-handed-off external-agent batch; also trigger on 任务提示、实施 Brief、Codex Review、diff 复核、Report 审计、外部批次复核."
+description: "Use for standalone non-state-changing Antigravity/Codex prompt or brief wording, read-only diff/report/evidence review that does not request fixes or decide final completion, or dispatch/review/resume of an external-agent batch with an existing valid Handoff Contract. Do not use for file edits, review-and-fix, final completion, or workflow/template changes."
 ---
 
 # Codex Brief & Antigravity Review
@@ -17,8 +17,8 @@ execution governor only when a valid Handoff Contract already exists.
    valid Handoff Contract and the task is dispatch, Report audit, retry,
    recovery, or batch promotion.
 3. Return to `openspec-superpower-change` before any file modification,
-   implementation, behavior change, OpenSpec/risk decision, or final task
-   completion decision.
+   implementation, behavior change, workflow/template edit, OpenSpec/risk
+   decision, or final task completion decision.
 
 “Review and fix” is not standalone review. Do not silently switch from review
 to implementation.
@@ -39,7 +39,7 @@ another output location.
 
 ## Handed-off External Execution
 
-Consume the router-owned contract from
+Consume the router-owned schema-version-3 contract from
 `docs/agent-collab/<change-id>/status.md`. Do not re-decide mode, approval,
 risk, planned batches, or final verification commands. Missing, stale,
 duplicated, contradictory, or unparsable canonical state is `BLOCKED`.
@@ -61,16 +61,23 @@ earlier `FAIL`, `BLOCKED`, or timeout attempt.
 ### State Machine
 
 1. Validate canonical contract revision, lifecycle, batch, attempt, and owner.
-2. Transition canonical status to `ready-for-execution`, increment its
-   revision, then write the current attempt Brief using that execution
-   fingerprint and dispatch the named agent.
-3. Require the attempt Report or Abort Report using the execution revision;
+2. Transition canonical status to `ready-for-execution`, increment its revision,
+   hash the canonical status file, and write the current attempt Brief with that
+   execution revision and canonical SHA-256.
+3. Run a current-revision **Preflight Review** before dispatch for scope,
+   acceptance, exact commands, rollback/stop conditions, Git authority, and
+   placeholders. Preflight uses only `PASS`/`BLOCKED`; any finding moves to
+   `blocked`, revises the Brief in a new attempt, and must be reviewed again.
+   Unchanged revisions do not repeat ceremony. Dispatch only after Preflight
+   PASS.
+4. Require the attempt Report or Abort Report using the execution revision and
+   matching SHA-256;
    then transition status to `ready-for-review` with a new review revision.
-4. Audit scope, evidence, critical commands, production wiring, and required
+5. Audit scope, evidence, critical commands, production wiring, and required
    acceptance layers. Rerun critical commands where possible.
-5. Write a Review whose first line is exactly `# Review Result: PASS`,
+6. Write a Review whose first line is exactly `# Review Result: PASS`,
    `# Review Result: FAIL`, or `# Review Result: BLOCKED`.
-6. Apply the transition:
+7. Apply the transition:
    - `FAIL` -> same batch `needs-fix`, increment attempt, create a correction
      Brief, verify, and Review again;
    - `BLOCKED` -> same batch `blocked`, record owner/reason/resume condition,
@@ -78,6 +85,12 @@ earlier `FAIL`, `BLOCKED`, or timeout attempt.
    - non-final `PASS` -> increment one batch, reset attempt, next Brief;
    - final `PASS` -> `awaiting-final-verification`, return to
      `openspec-superpower-change` without claiming task completion.
+
+Before applying any transition that introduces an artifact, write the proposed
+status outside the project, run the project validator with current canonical
+status as `--previous-status`, preserve the PASS output, then atomically replace
+the one canonical block. Never persist the proposed/previous snapshot in the
+project.
 
 Only Review `PASS` may promote a batch. `FAIL` and `BLOCKED` must be reviewed
 again after correction or recovery; a chat acknowledgment is not closure.
@@ -95,6 +108,14 @@ The governor runs `step_critical` for each attempt. The router runs
 `final_critical` after final batch Review PASS; later implementation changes
 invalidate that final evidence.
 
+Every external profile has at least one non-blank `step_critical` and
+`final_critical`. Status references the attempt Report and Review by safe
+project-relative path plus SHA-256. Each artifact embeds a schema-1 manifest
+binding role, result, change, batch, attempt, and source canonical
+revision/SHA-256. Review records from/to revision and canonical SHA-256
+transition evidence; `complete` runtime validation requires the actual previous
+status.
+
 ## Non-Negotiables
 
 - Codex does not edit implementation files while this skill is active; return
@@ -110,6 +131,9 @@ invalidate that final evidence.
   layers are `not-applicable`.
 - Never advance a batch or claim completion from `FAIL`, `BLOCKED`, or stale
   evidence.
+- Every actionable Review finding must be fixed and reviewed again. Record a
+  non-actionable observation only as an accepted residual risk with an owner or
+  decision; do not leave it as an unresolved finding under PASS.
 - Never run `git add`, `git commit`, `git reset`, or `git clean` unless the user
   explicitly commands it; never push without explicit approval.
 

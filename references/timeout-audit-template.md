@@ -3,6 +3,22 @@
 文档类型：Timeout Audit
 日志及版本：YYYY-MM-DD v1
 
+<!-- COOP_EVIDENCE_MANIFEST_START -->
+```yaml
+evidence_schema_version: 1
+evidence_role: timeout-audit
+evidence_result: blocked
+change_id: <change-id>
+current_batch: <NN>
+attempt: <AA>
+contract_revision: <audited canonical revision>
+canonical_sha256: <audited canonical SHA-256>
+```
+<!-- COOP_EVIDENCE_MANIFEST_END -->
+
+`timeout-audit` 只能是 `blocked`，不得用于 PASS/FAIL promotion。保存并
+计算 SHA-256 后不得改写 manifest 或正文。
+
 ## 结论
 
 需修改
@@ -45,5 +61,9 @@
 - Timeout audit required before redispatch: yes
 - Handoff Contract status: present / missing / duplicated / unparsable
 - Lifecycle: `blocked`; current batch unchanged; record `blocked_reason`, `blocker_owner`, and `resume_condition`
-- Recovery must use a new attempt and fresh Review; do not overwrite the timeout attempt
+- Timeout Audit may satisfy `attempt_report_artifact` and
+  `last_review_artifact` only after Codex records its project-relative path and
+  SHA-256 in canonical status.
+- Batch recovery must use a new attempt, return to Brief/execution rather than
+  jumping directly to Review, and produce a fresh Report and fresh Review.
 - Next owner: Codex / external agent / user

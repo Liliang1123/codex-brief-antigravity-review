@@ -15,8 +15,9 @@ Thank you for your interest in contributing to this project! This skill aims to 
    - Keep templates and detailed instructions in the `references/` directory.
    - Avoid hardcoding user-specific paths or domains.
 4. **Validate**:
-   - Ensure the Mermaid flowcharts in `SKILL.md` render correctly.
-   - Verify YAML frontmatter syntax.
+   - Run `scripts/validate_templates.py` and the standard-library unittest suite.
+   - Run `quick_validate.py` with a Python interpreter that provides PyYAML.
+   - Verify schema-3 Handoff parity when the companion repository is available.
 5. **Submit a Pull Request (PR)**:
    - Provide a clear explanation of what improvements your changes introduce.
    - Mention the verification results.

@@ -1,21 +1,23 @@
 # Handoff Contract
 
 The Handoff Contract is the single machine-readable state shared by
-`openspec-superpower-change` and `codex-brief-antigravity-review`.
+`openspec-superpower-change` and `codex-brief-antigravity-review`. Schema version
+3 applies only to Handoff-backed external execution; standalone and inline work
+do not create this contract.
 
 ## Canonical Location
 
 Keep exactly one mutable marker block in
 `docs/agent-collab/<change-id>/status.md`. Brief, Report, Review, Gate, and chat
-output must not embed another mutable block; they reference the canonical path
-and record `contract_revision`, batch, attempt, and a fingerprint.
+output must not embed another mutable block; they reference the canonical path,
+revision, batch, attempt, and SHA-256 fingerprint.
 
 ## Marker Block
 
 ````markdown
 <!-- COOP_HANDOFF_CONTRACT_START -->
 ```yaml
-schema_version: 2
+schema_version: 3
 change_id: add-example-change
 mode: approved-implementation
 approval_status: approved
@@ -26,12 +28,16 @@ planned_batches: 2
 attempt: 1
 contract_revision: 1
 lifecycle_state: ready-for-brief
+attempt_report_artifact: null
 last_review_result: not-run
-blocked_reason: none
+last_review_artifact: null
+blocked_reason: null
 blocker_owner: none
-resume_condition: none
+resume_condition: null
 final_verification: pending
+final_verification_artifact: null
 final_review_result: pending
+final_review_artifact: null
 executor: external-agent
 governor: codex-brief-antigravity-review
 next_owner: codex-brief-antigravity-review
@@ -48,8 +54,8 @@ stop_conditions:
   - scope expansion
   - contract ambiguity
 verification_strategy:
-  step: run step_critical per batch; review reruns critical plus an independent check
-  final: openspec-superpower-change runs final_critical after final batch Review PASS
+  step: run step_critical per attempt; Review reruns critical plus an independent check
+  final: persist final_critical evidence before final Review
 readonly_fields:
   - schema_version
   - change_id
@@ -72,24 +78,68 @@ readonly_fields:
 
 ## Required Fields And Values
 
-Required fields include all fields in the example. Key values:
+Required fields include every field in the example.
 
 - `lifecycle_state`: `ready-for-brief`, `ready-for-execution`,
   `ready-for-review`, `needs-fix`, `blocked`,
   `awaiting-final-verification`, or `complete`.
 - `last_review_result`: `not-run`, `pass`, `fail`, or `blocked`.
-- `final_verification`: `pending`, `pass`, `fail`, or `blocked`.
-- `final_review_result`: `pending`, `pass`, `fail`, or `blocked`.
-- `attempt` and `contract_revision`: positive integers.
+- `final_verification` and `final_review_result`: `pending`, `pass`, `fail`,
+  or `blocked`.
+- `attempt` and `contract_revision`: positive integers; booleans are invalid.
 - `next_owner`: `openspec-superpower-change`,
   `codex-brief-antigravity-review`, `external-agent`, or `user`.
+- `step_critical`, `final_critical`, and `stop_conditions`: non-empty lists of
+  non-blank strings for every evidence profile.
+- `readonly_fields`: exactly the immutable field set shown above, without
+  duplicates or additional mutable fields.
 
-`standard` and `strict` require non-empty `step_critical` and
-`final_critical`. Business acceptance must define `unit`, `pipeline`, `api`,
-and `real_business` as `required`, `optional`, or `not-applicable`.
-Both critical-command fields are string lists for every profile;
-`stop_conditions` is a non-empty string list and `verification_strategy` is a
-mapping with string `step` and `final` entries.
+An artifact reference is either `null` or this mapping:
+
+```yaml
+path: docs/project-relative/evidence.md
+sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+
+Artifact paths must be project-relative, may not contain `..`, and must remain
+inside the declared artifact root after symlink resolution. A non-pending result
+requires a matching artifact reference; a pending/not-run result requires
+`null`. Artifact paths are distinct by evidence role. The only allowed reuse is
+one identical `timeout-audit` artifact serving as both the attempt Report and
+the blocking Review.
+
+Every referenced file contains exactly one immutable evidence manifest:
+
+````markdown
+<!-- COOP_EVIDENCE_MANIFEST_START -->
+```yaml
+evidence_schema_version: 1
+evidence_role: batch-review
+evidence_result: pass
+change_id: add-example-change
+current_batch: 1
+attempt: 1
+contract_revision: 3
+canonical_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+```
+<!-- COOP_EVIDENCE_MANIFEST_END -->
+````
+
+Valid roles are `attempt-report`, `batch-review`, `preflight-review`,
+`timeout-audit`, `final-verification`, and `final-review`. Results are `pass`,
+`fail`, or `blocked`. `current_batch` and `attempt` identify the work evidenced.
+`contract_revision` and `canonical_sha256` identify the earlier canonical status
+revision that the artifact reports on, reviews, or verifies; this source
+fingerprint avoids a hash cycle with the new artifact reference.
+
+Runtime status validation checks file existence, non-empty content, SHA-256,
+role-to-state binding, result-to-status binding, batch/attempt freshness, source
+revision ordering, canonical fingerprint format, and matching `change_id`; a
+heading or filename alone is not evidence identity. `preflight-review` and
+`timeout-audit` are BLOCKED-only batch evidence and never satisfy batch PASS.
+Final completion validation additionally requires `--previous-status` so the
+final Review manifest can be checked against the actual prior revision and its
+SHA-256.
 
 This is an external execution contract: `executor` is `external-agent`,
 `governor` is `codex-brief-antigravity-review`, and mode is
@@ -99,35 +149,114 @@ This is an external execution contract: `executor` is `external-agent`,
 
 ```text
 ready-for-brief -> ready-for-execution -> ready-for-review
-FAIL -> needs-fix -> increment attempt -> same batch execution/review
-BLOCKED -> blocked -> satisfy resume_condition -> same batch fresh review
-PASS non-final -> increment batch, reset attempt -> ready-for-brief
-PASS final -> awaiting-final-verification -> router final review/verification
-router final verification + final Review PASS -> complete
+batch FAIL -> needs-fix -> new attempt on the same batch
+batch BLOCKED -> blocked -> new attempt on the same batch
+PASS non-final -> next batch ready-for-brief
+PASS final -> awaiting-final-verification (pending/pending)
+final verification PASS -> awaiting-final-verification (pass/pending)
+final Review PASS -> complete
+final FAIL -> needs-fix; final BLOCKED -> blocked
 ```
+
+Valid result tuples by state:
+
+| State | `last_review_result` | `final_verification` | `final_review_result` |
+|---|---|---|---|
+| active attempt | `not-run` | `pending` | `pending` |
+| `needs-fix` after batch Review | `fail` | `pending` | `pending` |
+| `needs-fix` after final verification | `pass` | `fail` | `pending` |
+| `needs-fix` after final Review | `pass` | `pass` | `fail` |
+| `blocked` during batch | `blocked` | `pending` | `pending` |
+| `blocked` during final verification | `pass` | `blocked` | `pending` |
+| `blocked` during final Review | `pass` | `pass` | `blocked` |
+| awaiting final verification | `pass` | `pending` or `pass` | `pending` |
+| `complete` | `pass` | `pass` | `pass` |
 
 Rules:
 
 - Every state change increments `contract_revision` by one.
 - `FAIL` and `BLOCKED` never advance `current_batch`.
-- `FAIL` increments `attempt`; new attempt-specific artifacts must not
-  overwrite earlier Brief/Report/Review evidence.
-- `blocked` requires non-`none` `blocked_reason`, `blocker_owner`, and
-  `resume_condition`, plus `last_review_result: blocked`; recovered work
-  refreshes evidence before Review.
-- Final batch `PASS` keeps `current_batch == planned_batches`, sets
-  `awaiting-final-verification`, `last_review_result: pass`, and
-  `next_owner: openspec-superpower-change`.
-- `complete` requires final batch, `last_review_result: pass`,
-  `final_verification: pass`, `final_review_result: pass`, and
-  `next_owner: user`. `complete` is terminal.
-- Any missing, stale, duplicated, contradictory, or unparsable contract is
+- A batch retry increments `attempt`; attempt-specific artifacts never overwrite
+  earlier evidence. Batch recovery may return to Brief or execution, never
+  directly to Review without a fresh Report.
+- Every `ready-for-review` decision preserves the exact Report reference it
+  reviewed. Non-final promotion requires Review PASS plus a Review artifact;
+  clearing or replacing either reference in that decision is invalid.
+- `ready-for-review` requires `attempt_report_artifact`. A pre-dispatch
+  `blocked` state may have no Report yet; its Preflight Review still supplies
+  `last_review_artifact`. Any completed batch Review, timeout audit, or blocking
+  Review requires `last_review_artifact`.
+- Final batch PASS keeps `current_batch == planned_batches`, sets
+  `awaiting-final-verification`, and returns ownership to the router.
+- Final verification PASS is persisted in a new revision before final Review.
+  Direct `pending/pending -> complete` is invalid.
+- Final verification FAIL/BLOCKED may only start from `pass/pending/pending`;
+  final Review PASS/FAIL/BLOCKED may only start from the separately persisted
+  `pass/pass/pending` revision.
+- A `blocked -> blocked` metadata update preserves batch, attempt, the complete
+  result tuple, and every evidence reference. It cannot change gate stage.
+- Recovery from a final-gate BLOCKED state also preserves the accepted attempt
+  Report and batch Review references.
+- Any implementation change after final verification invalidates that PASS and
+  clears its artifact before the next execution attempt.
+- `complete` requires attempt Report, batch Review, final verification, and final
+  Review evidence; it is terminal.
+- Missing, stale, duplicated, contradictory, unsafe, or unparsable state is
   `BLOCKED` and returns to the router or user.
 
-## Ownership
+## Ownership And Integrity
 
-The router creates the contract, owns readonly routing fields and final
-verification, and may mark `complete`. The brief governor may update batch,
-attempt, lifecycle, review result, blocker, revision, and next owner according
-to the lifecycle, but cannot re-decide approval or risk. External agents do not
-edit canonical status.
+The router creates the contract, owns readonly routing fields and final gates,
+and may mark `complete`. The brief governor updates batch lifecycle fields
+according to valid transitions. External agents never edit canonical status.
+
+After the governor writes `ready-for-execution`, it hashes the complete canonical
+status file. Brief and Report record that same execution revision and SHA-256.
+Before moving to `ready-for-review`, the governor recomputes the hash; mismatch is
+`BLOCKED`. Review records from/to revision, from/to SHA-256, and transition
+validation evidence.
+
+Validate an already persisted non-complete snapshot structurally with:
+
+```bash
+python3 scripts/validate_core_gates.py . \
+  --status docs/agent-collab/<change-id>/status.md \
+  --artifact-root .
+```
+
+Without `--previous-status`, `canonical_sha256` is format-checked but cannot be
+matched to a prior file. Before applying any transition that introduces a new
+artifact, write the proposed status to `${TMPDIR:-/tmp}`, keep the current
+canonical status unchanged, and add:
+
+```bash
+--previous-status docs/agent-collab/<change-id>/status.md
+```
+
+This validates the transition and matches the new artifact's source revision
+and SHA-256 to the actual prior canonical file. After PASS, atomically replace
+the canonical status with the proposed file and preserve the command result as
+evidence. Never persist the proposed or previous marker snapshot inside the
+project; the project must still contain exactly one Handoff marker block.
+
+`complete` mechanically requires this previous-status check. The validator
+rejects a complete single snapshot because it cannot prove the sequential final
+transition. Keep any temporary previous/proposed snapshot outside the project
+only until closure validation finishes, then delete it.
+
+### Trust Boundary
+
+`--previous-status` proves one transition against the current canonical file; it
+does not independently reconstruct or cryptographically authenticate every
+earlier revision. This workflow trusts that the governor has not rewritten the
+current canonical prior state and that each earlier transition PASS output is
+retained in repository evidence/history. A hostile actor able to forge the
+prior state and all artifacts is outside this lightweight validator's threat
+model; append-only journals or signatures would be a separate, heavier design.
+
+## Migration From Schema 2
+
+Do not mutate a schema-2 contract in place while execution is active. Stop the
+batch, preserve its attempt artifacts, create the four schema-3 artifact fields,
+replace string `none` blocker values with YAML `null` where applicable, validate
+the migrated snapshot, and resume with a fresh attempt.

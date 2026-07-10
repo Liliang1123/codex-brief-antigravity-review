@@ -18,7 +18,7 @@
 Run before completion with a Python interpreter that provides PyYAML for `quick_validate.py`:
 
 ```bash
-"${PYTHON_BIN:-python3}" /Users/elvis/.codex/skills/.system/skill-creator/scripts/quick_validate.py .
+"${PYTHON_BIN:-python3}" "${CODEX_HOME:-$HOME/.codex}/skills/.system/skill-creator/scripts/quick_validate.py" .
 PYTHONDONTWRITEBYTECODE=1 python3 scripts/validate_templates.py .
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -v
 ```

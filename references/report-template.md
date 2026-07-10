@@ -3,6 +3,23 @@
 文档类型：Execution Report
 日志及版本：YYYY-MM-DD v1
 
+<!-- COOP_EVIDENCE_MANIFEST_START -->
+```yaml
+evidence_schema_version: 1
+evidence_role: attempt-report
+evidence_result: pass
+change_id: <change-id>
+current_batch: <NN>
+attempt: <AA>
+contract_revision: <execution revision from Brief>
+canonical_sha256: <execution canonical SHA-256 from Brief>
+```
+<!-- COOP_EVIDENCE_MANIFEST_END -->
+
+将 `evidence_result` 改为本 Report 的实际 `pass`、`fail` 或
+`blocked`。四个坐标字段必须回显 Brief 的同一 execution fingerprint；
+保存并计算 SHA-256 后不得再改写 manifest 或正文。
+
 ## 结论
 
 PASS / FAIL / BLOCKED
@@ -62,13 +79,17 @@ git diff --stat
 |---|---|
 | Contract marker count | <start/end count> |
 | Canonical status path | `docs/agent-collab/<change-id>/status.md` |
-| `schema_version` / `contract_revision` | `2` / `<n>` |
+| `schema_version` / `contract_revision` | `3` / `<n>` |
+| canonical SHA-256 | `<same value as Brief>` |
 | `change_id` | `<value>` |
 | `risk_profile` | compact / standard / strict |
 | `batch_profile` | single / cohesive / staged |
 | `current_batch` / `planned_batches` | `<n>/<n>` |
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` |
 | readonly fields changed | no / yes |
+
+如果 execution revision 或 canonical SHA-256 与 Brief 不一致，本 Report 只能
+建议 `BLOCKED`。Codex 在状态转换前必须重新计算并核对。
 
 ### Commands
 
@@ -83,6 +104,11 @@ git diff --stat
 | raw SSE | `<path>` | 检查真实流式输出 |
 | summary JSON | `<path>` | 检查字段计数 / 工具进入情况 |
 | server log | `<path>` | 检查 server / API 错误 |
+
+Report 保存后由 Codex 记录：
+
+- `attempt_report_artifact.path`: `<project-relative report/abort path>`
+- `attempt_report_artifact.sha256`: `<64 lowercase hex>`
 
 ### Key Assertions
 
