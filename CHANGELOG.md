@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
 - Reject empty critical checks, blank blockers, unsafe evidence paths, and atomic final completion.
 - Expand adversarial lifecycle tests and bind runtime evidence to
   role/result/batch/attempt/source fingerprints plus previous-status transitions.
+- Add caveman as a presentation-compression mode and explicitly exclude
+  governance routing and evidence artifacts from compression.
 
 ## [1.0.0] - 2026-06-23
 
