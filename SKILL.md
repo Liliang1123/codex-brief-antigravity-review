@@ -1,6 +1,6 @@
 ---
 name: codex-brief-antigravity-review
-description: "Use for standalone non-state-changing Antigravity/Codex prompt or brief wording, read-only diff/report/evidence review that does not request fixes or decide final completion, or dispatch/review/resume of an external-agent batch with an existing valid Handoff Contract. Do not use for file edits, review-and-fix, final completion, or workflow/template changes."
+description: "Use for standalone non-state-changing Antigravity/Codex prompt or brief wording, read-only diff/report/evidence review that does not request fixes or decide final completion, or dispatch/review/resume of an external-agent batch with an existing valid Handoff Contract. Do not use for file edits, review-and-fix, final completion, or workflow/template changes. 可按用户要求用 caveman 风格压缩表达。"
 ---
 
 # Codex Brief & Antigravity Review
@@ -22,6 +22,17 @@ execution governor only when a valid Handoff Contract already exists.
 
 “Review and fix” is not standalone review. Do not silently switch from review
 to implementation.
+
+## Token-lean / Caveman output mode
+
+`caveman` 在本 skill 里仅用于**输出压缩**，不参与治理决策。
+
+- 触发：用户明确要求“少 token/更短/像 caveman 说”。
+- 允许：`Standalone Lightweight` 的提示词、brief/review 结论、可执行项清单。
+- 禁止：篡改 `SKILL.md`、`references/handoff-contract.md`、`reports`/`reviews`
+  的结构化必填字段；不能代替证据复核。
+- 生成 `Handoff Contract`、`Brief/Report/Review` 证明链时，使用标准模板内容；
+  用户侧可读解释可再压缩，不得省略状态、文件、证据命名和哈希约束。
 
 ## Standalone Lightweight
 
