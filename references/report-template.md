@@ -13,12 +13,16 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <execution revision from Brief>
 canonical_sha256: <execution canonical SHA-256 from Brief>
+agent_identity: <canonical executor_agent>
+agent_role: executor
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
 将 `evidence_result` 改为本 Report 的实际 `pass`、`fail` 或
 `blocked`。四个坐标字段必须回显 Brief 的同一 execution fingerprint；
 保存并计算 SHA-256 后不得再改写 manifest 或正文。
+`agent_identity` 只接受 canonical `antigravity-cli` 或 `grok-cli`；别名、
+Reviewer 身份或 `decision-owner` 角色均不是有效执行报告。
 
 ## 结论
 
@@ -79,13 +83,15 @@ git diff --stat
 |---|---|
 | Contract marker count | <start/end count> |
 | Canonical status path | `docs/agent-collab/<change-id>/status.md` |
-| `schema_version` / `contract_revision` | `3` / `<n>` |
+| `schema_version` / `contract_revision` | `4` / `<n>` |
 | canonical SHA-256 | `<same value as Brief>` |
 | `change_id` | `<value>` |
 | `risk_profile` | compact / standard / strict |
 | `batch_profile` | single / cohesive / staged |
 | `current_batch` / `planned_batches` | `<n>/<n>` |
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` |
+| `executor_agent` / `agent_role` | `<identity>` / `executor` |
+| `independent_reviewer_agent` / `decision_owner` | `<identity>` / `codex` |
 | readonly fields changed | no / yes |
 
 如果 execution revision 或 canonical SHA-256 与 Brief 不一致，本 Report 只能

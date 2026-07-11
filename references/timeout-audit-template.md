@@ -13,11 +13,15 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <audited canonical revision>
 canonical_sha256: <audited canonical SHA-256>
+agent_identity: codex
+agent_role: decision-owner
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
 `timeout-audit` 只能是 `blocked`，不得用于 PASS/FAIL promotion。保存并
 计算 SHA-256 后不得改写 manifest 或正文。
+它是 Codex 治理审计而非 executor evidence，因此即使同一 artifact 同时
+占用 Report 与 Review 字段，身份/角色仍为 `codex` / `decision-owner`。
 
 ## 结论
 

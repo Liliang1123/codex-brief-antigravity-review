@@ -18,7 +18,10 @@ It is intended for workflows where Codex should design, dispatch, and audit work
 - Preserves `FAIL`/`BLOCKED` attempt history and requires correction or recovery followed by another Review.
 - Uses canonical `status.md` for shared state and returns final batch `PASS` to the change gate for final verification.
 - Runs a current-revision Brief Preflight Review before dispatch.
-- Uses schema-3 project-relative Report/Review paths plus SHA-256 fingerprints.
+- Uses schema-4 agent-bound Handoff state and schema-1 project-relative
+  Report/Review evidence manifests plus SHA-256 fingerprints.
+- Accepts Antigravity CLI or Grok CLI as a bound executor/reviewer while Codex
+  remains the only authoritative transition and completion owner.
 
 ## Why It Exists
 
@@ -123,7 +126,9 @@ Handed-off: read canonical Handoff Contract
 - Every external profile requires non-blank step/final critical commands.
 - Report and Review evidence must be project-relative, non-empty, SHA-256
   matched, and carry the schema-1 role/result/change/batch/attempt/source
-  fingerprint manifest.
+  fingerprint manifest plus the producing agent identity and role.
+- Portable changes to this Skill are incomplete until every declared required
+  Codex/Antigravity/Grok runtime passes the shared cross-CLI sync gate.
 
 ## Installation
 

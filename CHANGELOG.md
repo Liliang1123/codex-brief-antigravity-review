@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.2.0] - 2026-07-11
+
+### Changed
+- Upgrade Handoff collaboration to schema 4 with bound executor, independent
+  reviewer, and Codex decision-owner identities.
+- Bind Report, Review, timeout, and dispatch evidence to the producing agent
+  identity/role and reject same-agent independent self-review.
+- Participate in the allowlisted Codex, Antigravity CLI, and Grok CLI runtime
+  synchronization and managed-governance completion gate.
+
 ## [1.1.0] - 2026-07-10
 
 ### Changed

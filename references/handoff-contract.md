@@ -2,8 +2,8 @@
 
 The Handoff Contract is the single machine-readable state shared by
 `openspec-superpower-change` and `codex-brief-antigravity-review`. Schema version
-3 applies only to Handoff-backed external execution; standalone and inline work
-do not create this contract.
+4 applies only to newly created Handoff-backed external execution; standalone
+and inline work do not create this contract.
 
 ## Canonical Location
 
@@ -17,7 +17,7 @@ revision, batch, attempt, and SHA-256 fingerprint.
 ````markdown
 <!-- COOP_HANDOFF_CONTRACT_START -->
 ```yaml
-schema_version: 3
+schema_version: 4
 change_id: add-example-change
 mode: approved-implementation
 approval_status: approved
@@ -40,6 +40,10 @@ final_review_result: pending
 final_review_artifact: null
 executor: external-agent
 governor: codex-brief-antigravity-review
+executor_agent: antigravity-cli
+independent_reviewer_agent: grok-cli
+decision_owner: codex
+independent_review_not_applicable_reason: null
 next_owner: codex-brief-antigravity-review
 step_critical:
   - focused test command
@@ -66,6 +70,10 @@ readonly_fields:
   - planned_batches
   - executor
   - governor
+  - executor_agent
+  - independent_reviewer_agent
+  - decision_owner
+  - independent_review_not_applicable_reason
   - final_critical
   - step_critical
   - business_acceptance
@@ -93,6 +101,15 @@ Required fields include every field in the example.
   non-blank strings for every evidence profile.
 - `readonly_fields`: exactly the immutable field set shown above, without
   duplicates or additional mutable fields.
+- `executor_agent`: `antigravity-cli` or `grok-cli` for this external contract.
+- `independent_reviewer_agent`: `codex`, `antigravity-cli`, `grok-cli`, or
+  `not-applicable`. A concrete reviewer must differ from `executor_agent`.
+- `decision_owner`: exactly `codex`; auxiliary agents cannot authorize a
+  canonical transition or final completion.
+- `independent_review_not_applicable_reason`: a non-blank string only when the
+  risk profile is `compact` and `independent_reviewer_agent` is
+  `not-applicable`; otherwise it is `null`. Standard and strict contracts must
+  bind a distinct concrete reviewer.
 
 An artifact reference is either `null` or this mapping:
 
@@ -121,6 +138,8 @@ current_batch: 1
 attempt: 1
 contract_revision: 3
 canonical_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+agent_identity: grok-cli
+agent_role: independent-reviewer
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 ````
@@ -131,6 +150,15 @@ Valid roles are `attempt-report`, `batch-review`, `preflight-review`,
 `contract_revision` and `canonical_sha256` identify the earlier canonical status
 revision that the artifact reports on, reviews, or verifies; this source
 fingerprint avoids a hash cycle with the new artifact reference.
+
+`agent_identity` is exactly `codex`, `antigravity-cli`, or `grok-cli`;
+aliases are rejected. `agent_role` is `executor`, `independent-reviewer`, or
+`decision-owner`. Attempt Reports bind the canonical executor. Batch Reviews
+bind the canonical independent reviewer, except a compact
+`not-applicable` path binds Codex as `decision-owner`. Preflight Review,
+timeout audit, final verification, and final Review bind Codex as
+`decision-owner`. The timeout-audit shared-artifact exception keeps that Codex
+identity even when it occupies the Report field.
 
 Runtime status validation checks file existence, non-empty content, SHA-256,
 role-to-state binding, result-to-status binding, batch/attempt freshness, source
@@ -144,6 +172,8 @@ SHA-256.
 This is an external execution contract: `executor` is `external-agent`,
 `governor` is `codex-brief-antigravity-review`, and mode is
 `approved-implementation`, approved `self-evolution`, or `direct-change`.
+The immutable concrete identities determine who executes and independently
+Reviews; only `decision_owner: codex` records the authoritative decision.
 
 ## Lifecycle And Review Loop
 
@@ -254,9 +284,11 @@ retained in repository evidence/history. A hostile actor able to forge the
 prior state and all artifacts is outside this lightweight validator's threat
 model; append-only journals or signatures would be a separate, heavier design.
 
-## Migration From Schema 2
+## Upgrade From Schema 3
 
-Do not mutate a schema-2 contract in place while execution is active. Stop the
-batch, preserve its attempt artifacts, create the four schema-3 artifact fields,
-replace string `none` blocker values with YAML `null` where applicable, validate
-the migrated snapshot, and resume with a fresh attempt.
+Schema 4 is a hard switch for contracts created after deployment. Before the
+switch, inventory every known active schema-3 canonical status and require it to
+reach `complete` under the existing v3 workflow. Do not rewrite, silently
+migrate, ignore, or abandon an active v3 contract. Retain the no-active-v3
+inventory result as upgrade evidence. Historical complete v3 contracts remain
+immutable history and are not revalidated as new schema-4 contracts.

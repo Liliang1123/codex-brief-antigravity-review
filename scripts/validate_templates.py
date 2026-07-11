@@ -18,8 +18,12 @@ START = "<!-- COOP_HANDOFF_CONTRACT_START -->"
 END = "<!-- COOP_HANDOFF_CONTRACT_END -->"
 EVIDENCE_START = "<!-- COOP_EVIDENCE_MANIFEST_START -->"
 EVIDENCE_END = "<!-- COOP_EVIDENCE_MANIFEST_END -->"
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 EVIDENCE_SCHEMA_VERSION = 1
+AGENT_IDENTITIES = {"codex", "antigravity-cli", "grok-cli"}
+AUXILIARY_AGENT_IDENTITIES = {"antigravity-cli", "grok-cli"}
+REVIEWER_IDENTITIES = AGENT_IDENTITIES | {"not-applicable"}
+AGENT_ROLES = {"executor", "independent-reviewer", "decision-owner"}
 RISK_PROFILES = {"compact", "standard", "strict"}
 BATCH_PROFILES = {"single", "cohesive", "staged"}
 BUSINESS_ACCEPTANCE = {"required", "optional", "not-applicable"}
@@ -64,6 +68,8 @@ ALLOWED_TRANSITIONS = {
 IMMUTABLE_FIELDS = {
     "schema_version", "change_id", "mode", "approval_status", "risk_profile",
     "batch_profile", "planned_batches", "executor", "governor",
+    "executor_agent", "independent_reviewer_agent", "decision_owner",
+    "independent_review_not_applicable_reason",
     "step_critical", "final_critical", "business_acceptance",
     "stop_conditions", "verification_strategy", "readonly_fields",
 }
@@ -266,6 +272,8 @@ def validate_handoff_contract(data: dict, label: str) -> None:
         "blocked_reason", "blocker_owner", "resume_condition",
         "final_verification", "final_verification_artifact",
         "final_review_result", "final_review_artifact", "executor", "governor",
+        "executor_agent", "independent_reviewer_agent", "decision_owner",
+        "independent_review_not_applicable_reason",
         "next_owner", "step_critical", "final_critical",
         "business_acceptance", "stop_conditions", "verification_strategy",
         "readonly_fields",
@@ -305,6 +313,24 @@ def validate_handoff_contract(data: dict, label: str) -> None:
         raise AssertionError(f"{label}: change_id must be a path-safe kebab-case slug")
     if data["executor"] != "external-agent" or data["governor"] != "codex-brief-antigravity-review":
         raise AssertionError(f"{label}: execution contract requires external-agent executor and brief governor")
+    if data["executor_agent"] not in AUXILIARY_AGENT_IDENTITIES:
+        raise AssertionError(f"{label}: invalid executor agent identity")
+    if data["independent_reviewer_agent"] not in REVIEWER_IDENTITIES:
+        raise AssertionError(f"{label}: invalid independent reviewer agent identity")
+    if data["decision_owner"] != "codex":
+        raise AssertionError(f"{label}: decision_owner must be codex")
+    reviewer = data["independent_reviewer_agent"]
+    reason = data["independent_review_not_applicable_reason"]
+    if reviewer == "not-applicable":
+        if data["risk_profile"] != "compact":
+            raise AssertionError(f"{label}: not-applicable reviewer is allowed only for compact")
+        if not _is_nonblank(reason):
+            raise AssertionError(f"{label}: not-applicable reviewer requires a non-blank reason")
+    else:
+        if reviewer == data["executor_agent"]:
+            raise AssertionError(f"{label}: executor and independent reviewer must be distinct")
+        if reason is not None:
+            raise AssertionError(f"{label}: reviewer reason must be null unless reviewer is not-applicable")
     if data["mode"] not in {"approved-implementation", "direct-change", "self-evolution"}:
         raise AssertionError(f"{label}: execution contract has invalid mode")
     if data["mode"] in {"approved-implementation", "self-evolution"} and data["approval_status"] != "approved":
@@ -456,6 +482,7 @@ def validate_evidence_artifacts(
         expected_fields = {
             "evidence_schema_version", "evidence_role", "evidence_result", "change_id",
             "current_batch", "attempt", "contract_revision", "canonical_sha256",
+            "agent_identity", "agent_role",
         }
         if set(manifest) != expected_fields:
             raise AssertionError(
@@ -467,6 +494,10 @@ def validate_evidence_artifacts(
             raise AssertionError(f"{label}: {key} has invalid evidence role")
         if manifest["evidence_result"] not in EVIDENCE_RESULTS:
             raise AssertionError(f"{label}: {key} has invalid evidence result")
+        if manifest["agent_identity"] not in AGENT_IDENTITIES:
+            raise AssertionError(f"{label}: {key} has invalid agent identity")
+        if manifest["agent_role"] not in AGENT_ROLES:
+            raise AssertionError(f"{label}: {key} has invalid agent role")
         if manifest["change_id"] != data["change_id"]:
             raise AssertionError(f"{label}: {key} change_id does not match canonical status")
         for coordinate in ("current_batch", "attempt", "contract_revision"):
@@ -510,6 +541,24 @@ def validate_evidence_artifacts(
         ):
             raise AssertionError(
                 f"{label}: {manifest['evidence_role']} is only valid for a blocked batch state"
+            )
+
+        evidence_role = manifest["evidence_role"]
+        if evidence_role == "attempt-report":
+            expected_identity_role = (data["executor_agent"], "executor")
+        elif evidence_role == "batch-review":
+            if data["independent_reviewer_agent"] == "not-applicable":
+                expected_identity_role = (data["decision_owner"], "decision-owner")
+            else:
+                expected_identity_role = (
+                    data["independent_reviewer_agent"], "independent-reviewer",
+                )
+        else:
+            expected_identity_role = (data["decision_owner"], "decision-owner")
+        actual_identity_role = (manifest["agent_identity"], manifest["agent_role"])
+        if actual_identity_role != expected_identity_role:
+            raise AssertionError(
+                f"{label}: {key} agent identity/role does not match the canonical assignment"
             )
 
     expected_batch = data["current_batch"]
@@ -774,6 +823,7 @@ def main(argv: list[str] | None = None) -> int:
             "canonical SHA-256", "建议状态", "外部 Agent 不得直接编辑 canonical",
             "COOP_EVIDENCE_MANIFEST_START", "evidence_role: attempt-report",
             "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
+            "agent_identity:", "agent_role: executor",
         ),
         "review-template.md": (
             "# Review Result: PASS / FAIL / BLOCKED", "Required State Transition",
@@ -781,6 +831,7 @@ def main(argv: list[str] | None = None) -> int:
             "awaiting-final-verification", "from/to revision", "actionable finding",
             "COOP_EVIDENCE_MANIFEST_START", "evidence_role: batch-review",
             "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
+            "agent_identity:", "agent_role: independent-reviewer",
         ),
         "agy-dispatch-template.md": (
             "attempt-<AA>", "Canonical status", "canonical SHA-256",
@@ -790,6 +841,7 @@ def main(argv: list[str] | None = None) -> int:
             "Attempt <AA>", "resume_condition", "fresh Review",
             "COOP_EVIDENCE_MANIFEST_START", "evidence_role: timeout-audit",
             "current_batch:", "attempt:", "contract_revision:", "canonical_sha256:",
+            "agent_identity: codex", "agent_role: decision-owner",
         ),
     }
     for filename, needles in required_templates.items():
@@ -811,6 +863,8 @@ def main(argv: list[str] | None = None) -> int:
     for needle in (
         "COOP_EVIDENCE_MANIFEST_START", "evidence_role", "evidence_result",
         "current_batch", "attempt", "contract_revision", "canonical_sha256",
+        "agent_identity", "agent_role", "executor_agent",
+        "independent_reviewer_agent", "decision_owner",
         "timeout-audit", "role-to-state binding", "result-to-status binding",
     ):
         require(handoff, needle, "handoff-contract.md")

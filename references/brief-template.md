@@ -25,11 +25,14 @@ docs/agent-collab/<change-id>/status.md
 
 | 字段 | 值 |
 |---|---|
-| `schema_version` | `3` |
+| `schema_version` | `4` |
 | `contract_revision` | `<n>` |
 | `current_batch` / `planned_batches` | `<NN>/<total>` |
 | `attempt` | `<AA>` |
 | `lifecycle_state` | `ready-for-execution` |
+| `executor_agent` | `antigravity-cli` / `grok-cli` |
+| `independent_reviewer_agent` | `codex` / the other auxiliary CLI / compact-only `not-applicable` |
+| `decision_owner` | `codex` |
 | canonical SHA-256 | `<64 lowercase hex>` |
 
 若 Contract 缺失、重复、过期、矛盾或不可解析，本 Brief 不得继续，必须交回 `openspec-superpower-change` 或用户。
@@ -39,6 +42,10 @@ docs/agent-collab/<change-id>/status.md
 
 Report 必须回显同一 execution revision 和 canonical SHA-256。Codex 在进入
 `ready-for-review` 前重新计算 canonical 文件哈希；不一致时必须 BLOCKED。
+Report 的 schema-1 manifest 将 `agent_identity` / `agent_role` 绑定为
+canonical `executor_agent` / `executor`。Standard/strict Review 必须使用
+不同的 `independent_reviewer_agent`；只有 compact 可记录带非空理由的
+`not-applicable`，此时 Codex 以 `decision-owner` 执行 inline Review。
 
 ## 2.2 Evidence Profile
 

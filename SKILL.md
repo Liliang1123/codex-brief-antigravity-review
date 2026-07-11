@@ -50,10 +50,16 @@ another output location.
 
 ## Handed-off External Execution
 
-Consume the router-owned schema-version-3 contract from
+Consume the router-owned schema-version-4 contract from
 `docs/agent-collab/<change-id>/status.md`. Do not re-decide mode, approval,
 risk, planned batches, or final verification commands. Missing, stale,
 duplicated, contradictory, or unparsable canonical state is `BLOCKED`.
+
+The contract binds canonical `executor_agent`, `independent_reviewer_agent`,
+and `decision_owner` identities. Codex remains the decision owner. Antigravity
+CLI or Grok CLI may execute or independently Review a batch, but an auxiliary
+result is advisory evidence until Codex validates the identity/role binding,
+reruns required evidence where possible, and records the transition.
 
 ### Artifact Paths
 
@@ -85,7 +91,9 @@ earlier `FAIL`, `BLOCKED`, or timeout attempt.
    matching SHA-256;
    then transition status to `ready-for-review` with a new review revision.
 5. Audit scope, evidence, critical commands, production wiring, and required
-   acceptance layers. Rerun critical commands where possible.
+   acceptance layers. When an independent auxiliary reviewer is assigned,
+   consume its Review only if its identity and role match the contract and differ
+   from the executor. Rerun critical commands where possible.
 6. Write a Review whose first line is exactly `# Review Result: PASS`,
    `# Review Result: FAIL`, or `# Review Result: BLOCKED`.
 7. Apply the transition:
@@ -122,10 +130,10 @@ invalidate that final evidence.
 Every external profile has at least one non-blank `step_critical` and
 `final_critical`. Status references the attempt Report and Review by safe
 project-relative path plus SHA-256. Each artifact embeds a schema-1 manifest
-binding role, result, change, batch, attempt, and source canonical
-revision/SHA-256. Review records from/to revision and canonical SHA-256
-transition evidence; `complete` runtime validation requires the actual previous
-status.
+binding role, result, change, batch, attempt, source canonical
+revision/SHA-256, producing agent identity, and producing role. Review records
+from/to revision and canonical SHA-256 transition evidence; `complete` runtime
+validation requires the actual previous status.
 
 ## Non-Negotiables
 
@@ -135,6 +143,10 @@ status.
 - Every governed Brief lists allowed/forbidden files, abort conditions, attempt
   Report path, critical evidence, and canonical status fingerprint.
 - External agents must not edit canonical status or readonly fields.
+- External executor and independent reviewer identities must match the canonical
+  assignment; standard/strict work forbids same-agent self-review.
+- Auxiliary `PASS` is advisory. Only Codex may record the authoritative batch or
+  final decision.
 - Missing Report/evidence/required real acceptance is `BLOCKED`.
 - Scope violation, destructive git operation, or reproduced regression is
   `FAIL`.

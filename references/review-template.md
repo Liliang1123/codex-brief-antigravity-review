@@ -14,6 +14,8 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <reviewed canonical revision>
 canonical_sha256: <reviewed canonical SHA-256>
+agent_identity: <canonical reviewer identity>
+agent_role: independent-reviewer
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
@@ -22,6 +24,12 @@ canonical_sha256: <reviewed canonical SHA-256>
 最终 `PASS` / `FAIL` / `BLOCKED`（小写）一致。保存并计算 SHA-256
 后不得改写。`contract_revision` 和 `canonical_sha256` 指向本 Review
 实际读取的 transition 前 canonical status。
+
+Standard/strict batch Review 的 `agent_identity` 必须等于 immutable
+`independent_reviewer_agent`、不同于 `executor_agent`，且 `agent_role` 为
+`independent-reviewer`。Compact `not-applicable` reviewer 使用
+`codex` / `decision-owner`。Preflight 和 final Review 也使用
+`codex` / `decision-owner`。别名和 executor self-review 均无效。
 
 Preflight 只使用 `PASS`/`BLOCKED`。仅 `BLOCKED` Preflight 以
 `preflight-review: blocked` 绑定 canonical `blocked` 状态；Preflight
@@ -109,7 +117,7 @@ git status --short
 | 字段 | Brief | Report/Status | 结论 |
 |---|---|---|---|
 | `change_id` | `<value>` | `<value>` | PASS/FAIL/BLOCKED |
-| `schema_version` | `3` | `3` | PASS/FAIL/BLOCKED |
+| `schema_version` | `4` | `4` | PASS/FAIL/BLOCKED |
 | Execution revision | Brief `<n>` | Report `<n>` | PASS/FAIL/BLOCKED |
 | Execution canonical SHA-256 | Brief `<hash>` | Report/recomputed `<hash>` | PASS/FAIL/BLOCKED |
 | Review revision | expected `<n+1>` | canonical status `<n+1>` | PASS/FAIL/BLOCKED |
@@ -118,6 +126,9 @@ git status --short
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` | `<AA>` / `<state>` | PASS/FAIL/BLOCKED |
 | `next_owner` | `<owner>` | `<owner>` | PASS/FAIL/BLOCKED |
 | `verification_strategy` | `<summary>` | `<summary>` | PASS/FAIL/BLOCKED |
+| `executor_agent` | `<identity>` | `<identity>` | PASS/FAIL/BLOCKED |
+| `independent_reviewer_agent` | `<identity>` | `<identity>` | PASS/FAIL/BLOCKED |
+| `decision_owner` | `codex` | `codex` | PASS/FAIL/BLOCKED |
 
 Transition evidence（from/to revision 与 SHA-256）：
 

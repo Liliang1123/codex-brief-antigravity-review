@@ -22,7 +22,21 @@ def evidence_manifest(
     attempt: int = 1,
     contract_revision: int = 1,
     canonical_sha256: str = "b" * 64,
+    agent_identity: str | None = None,
+    agent_role: str | None = None,
 ) -> str:
+    if agent_identity is None or agent_role is None:
+        defaults = {
+            "attempt-report": ("antigravity-cli", "executor"),
+            "batch-review": ("grok-cli", "independent-reviewer"),
+            "preflight-review": ("codex", "decision-owner"),
+            "timeout-audit": ("codex", "decision-owner"),
+            "final-verification": ("codex", "decision-owner"),
+            "final-review": ("codex", "decision-owner"),
+        }
+        default_identity, default_role = defaults[role]
+        agent_identity = agent_identity or default_identity
+        agent_role = agent_role or default_role
     return (
         "<!-- COOP_EVIDENCE_MANIFEST_START -->\n"
         "```yaml\n"
@@ -34,9 +48,27 @@ def evidence_manifest(
         f"attempt: {attempt}\n"
         f"contract_revision: {contract_revision}\n"
         f"canonical_sha256: {canonical_sha256}\n"
+        f"agent_identity: {agent_identity}\n"
+        f"agent_role: {agent_role}\n"
         "```\n"
         "<!-- COOP_EVIDENCE_MANIFEST_END -->\n"
     )
+
+
+def schema4_contract(validator, handoff: str, **overrides) -> dict:
+    data = validator.extract_handoff_contract(handoff, "handoff")
+    identity_fields = {
+        "executor_agent": "antigravity-cli",
+        "independent_reviewer_agent": "grok-cli",
+        "decision_owner": "codex",
+        "independent_review_not_applicable_reason": None,
+    }
+    data.update(schema_version=4, **identity_fields)
+    data["readonly_fields"] = list(dict.fromkeys([
+        *data["readonly_fields"], *identity_fields,
+    ]))
+    data.update(overrides)
+    return data
 
 
 def load_validator():
@@ -111,15 +143,160 @@ class WorkflowRulesTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "complete"):
             self.validator.validate_handoff_contract(data, "invalid-complete")
 
-    def test_handoff_schema_has_evidence_bound_v3_fields(self):
+    def test_handoff_schema_has_evidence_bound_v4_fields(self):
         for expected in (
-            "schema_version: 3",
+            "schema_version: 4",
             "attempt_report_artifact:",
             "last_review_artifact:",
             "final_verification_artifact:",
             "final_review_artifact:",
         ):
             self.assertIn(expected, self.handoff)
+
+    def test_schema4_requires_bound_agent_identities_and_codex_decision_owner(self):
+        data = schema4_contract(self.validator, self.handoff)
+        self.validator.validate_handoff_contract(data, "schema4-identities")
+        self.assertEqual(self.validator.SCHEMA_VERSION, 4)
+        for field in (
+            "executor_agent", "independent_reviewer_agent", "decision_owner",
+            "independent_review_not_applicable_reason",
+        ):
+            self.assertIn(field, self.validator.IMMUTABLE_FIELDS)
+
+        for field, value in (
+            ("executor_agent", "agy"),
+            ("independent_reviewer_agent", "grok"),
+            ("decision_owner", "antigravity-cli"),
+        ):
+            invalid = dict(data)
+            invalid[field] = value
+            with self.subTest(field=field, value=value):
+                with self.assertRaisesRegex(AssertionError, "agent|identity|decision_owner"):
+                    self.validator.validate_handoff_contract(invalid, "invalid-identity")
+
+    def test_standard_and_strict_require_a_distinct_reviewer(self):
+        self.assertEqual(self.validator.SCHEMA_VERSION, 4)
+        for profile in ("standard", "strict"):
+            same_agent = schema4_contract(
+                self.validator, self.handoff, risk_profile=profile,
+                independent_reviewer_agent="antigravity-cli",
+            )
+            with self.subTest(profile=profile, case="self-review"):
+                with self.assertRaisesRegex(AssertionError, "reviewer|distinct|self-review"):
+                    self.validator.validate_handoff_contract(same_agent, "self-review")
+
+            no_reviewer = schema4_contract(
+                self.validator, self.handoff, risk_profile=profile,
+                independent_reviewer_agent="not-applicable",
+                independent_review_not_applicable_reason="reviewed inline",
+            )
+            with self.subTest(profile=profile, case="not-applicable"):
+                with self.assertRaisesRegex(AssertionError, "reviewer|not-applicable|compact"):
+                    self.validator.validate_handoff_contract(no_reviewer, "missing-reviewer")
+
+    def test_compact_not_applicable_reviewer_requires_a_reason(self):
+        valid = schema4_contract(
+            self.validator, self.handoff, risk_profile="compact",
+            independent_reviewer_agent="not-applicable",
+            independent_review_not_applicable_reason="Codex performs the inline Review",
+        )
+        self.validator.validate_handoff_contract(valid, "compact-inline-review")
+
+        for reason in (None, "", "   "):
+            invalid = dict(valid)
+            invalid["independent_review_not_applicable_reason"] = reason
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(AssertionError, "reason|non-blank"):
+                    self.validator.validate_handoff_contract(invalid, "missing-na-reason")
+
+        concrete = schema4_contract(
+            self.validator, self.handoff, risk_profile="compact",
+            independent_review_not_applicable_reason="must be null",
+        )
+        with self.assertRaisesRegex(AssertionError, "reason|not-applicable|null"):
+            self.validator.validate_handoff_contract(concrete, "unexpected-na-reason")
+
+    def test_schema4_agent_identity_fields_are_immutable(self):
+        before = schema4_contract(self.validator, self.handoff)
+        after = dict(before)
+        after.update(
+            lifecycle_state="ready-for-execution",
+            contract_revision=before["contract_revision"] + 1,
+            next_owner="external-agent", executor_agent="grok-cli",
+            independent_reviewer_agent="codex",
+        )
+        with self.assertRaisesRegex(
+            AssertionError,
+            "readonly field changed: (executor_agent|independent_reviewer_agent)",
+        ):
+            self.validator.validate_transition(before, after, "identity-change")
+
+    def test_attempt_report_manifest_binds_executor_identity_and_role(self):
+        data = schema4_contract(
+            self.validator, self.handoff, lifecycle_state="ready-for-review",
+            contract_revision=2, next_owner="codex-brief-antigravity-review",
+            attempt_report_artifact=artifact("report.md"),
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report = root / "report.md"
+            report.write_text(evidence_manifest("attempt-report", "pass"), encoding="utf-8")
+            data["attempt_report_artifact"] = {
+                "path": "report.md", "sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+            }
+            self.validator.validate_handoff_contract(data, "executor-evidence")
+            self.validator.validate_evidence_artifacts(data, root, "executor-evidence")
+
+            report.write_text(evidence_manifest(
+                "attempt-report", "pass", agent_identity="grok-cli", agent_role="independent-reviewer",
+            ), encoding="utf-8")
+            data["attempt_report_artifact"]["sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(AssertionError, "identity|role|executor|impersonation"):
+                self.validator.validate_evidence_artifacts(data, root, "executor-impersonation")
+
+    def test_batch_review_rejects_executor_self_review_and_impersonation(self):
+        data = schema4_contract(
+            self.validator, self.handoff, lifecycle_state="awaiting-final-verification",
+            current_batch=2, contract_revision=3, last_review_result="pass",
+            next_owner="openspec-superpower-change",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            report = root / "report.md"
+            review = root / "review.md"
+            report.write_text(evidence_manifest(
+                "attempt-report", "pass", current_batch=2, contract_revision=1,
+            ), encoding="utf-8")
+            review.write_text(evidence_manifest(
+                "batch-review", "pass", current_batch=2, contract_revision=2,
+                agent_identity="antigravity-cli", agent_role="independent-reviewer",
+            ), encoding="utf-8")
+            data["attempt_report_artifact"] = {
+                "path": "report.md", "sha256": hashlib.sha256(report.read_bytes()).hexdigest(),
+            }
+            data["last_review_artifact"] = {
+                "path": "review.md", "sha256": hashlib.sha256(review.read_bytes()).hexdigest(),
+            }
+            self.validator.validate_handoff_contract(data, "review-impersonation")
+            with self.assertRaisesRegex(AssertionError, "identity|reviewer|self-review|impersonation"):
+                self.validator.validate_evidence_artifacts(data, root, "review-impersonation")
+
+    def test_timeout_audit_binds_codex_decision_owner_for_shared_artifact(self):
+        data = schema4_contract(
+            self.validator, self.handoff, lifecycle_state="blocked", contract_revision=2,
+            last_review_result="blocked", blocked_reason="executor timeout",
+            blocker_owner="external-agent", resume_condition="redispatch",
+            next_owner="codex-brief-antigravity-review",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            timeout = root / "timeout.md"
+            timeout.write_text(evidence_manifest("timeout-audit", "blocked"), encoding="utf-8")
+            ref = {"path": "timeout.md", "sha256": hashlib.sha256(timeout.read_bytes()).hexdigest()}
+            data["attempt_report_artifact"] = ref
+            data["last_review_artifact"] = ref
+            self.validator.validate_handoff_contract(data, "timeout-identity")
+            self.validator.validate_evidence_artifacts(data, root, "timeout-identity")
 
     def test_fallback_scalar_parser_handles_yaml_booleans_and_null(self):
         self.assertIs(self.validator.parse_scalar("true"), True)
