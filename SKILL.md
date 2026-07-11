@@ -15,7 +15,8 @@ execution governor only when a valid Handoff Contract already exists.
    prompt, Brief, checklist, or performs read-only diff/Report/evidence review.
 2. Use **Handed-off External Execution** when canonical `status.md` contains a
    valid Handoff Contract and the task is dispatch, Report audit, retry,
-   recovery, or batch promotion.
+   recovery, or batch promotion. A manually copied state-changing standard or
+   strict Brief uses this same route; copy/paste does not make it standalone.
 3. Return to `openspec-superpower-change` before any file modification,
    implementation, behavior change, workflow/template edit, OpenSpec/risk
    decision, or final task completion decision.
@@ -50,16 +51,21 @@ another output location.
 
 ## Handed-off External Execution
 
-Consume the router-owned schema-version-4 contract from
+Consume the router-owned schema-version-5 contract from
 `docs/agent-collab/<change-id>/status.md`. Do not re-decide mode, approval,
-risk, planned batches, or final verification commands. Missing, stale,
-duplicated, contradictory, or unparsable canonical state is `BLOCKED`.
+risk, planned batches, profiles, authorization, or final verification commands.
+Missing, stale, duplicated, contradictory, or unparsable canonical state is
+`BLOCKED`. Active schema-4 contracts finish under schema 4 and are never silently
+migrated.
 
-The contract binds canonical `executor_agent`, `independent_reviewer_agent`,
-and `decision_owner` identities. Codex remains the decision owner. Antigravity
-CLI or Grok CLI may execute or independently Review a batch, but an auxiliary
-result is advisory evidence until Codex validates the identity/role binding,
-reruns required evidence where possible, and records the transition.
+The contract binds immutable control-plane, executor, and reviewer assignments
+by `agent_product`, contract-local `agent_instance_id`, `agent_role`, and
+`capability_profile`, plus decision provenance and a Confirmation Lease. The
+bound Codex control-plane instance remains the decision owner. Assigned Codex,
+Antigravity CLI, or Grok CLI instances may execute or independently Review, but
+their result is advisory evidence until identity/profile binding and required
+evidence pass. Standard/strict executor and reviewer instance IDs differ even
+when the products match.
 
 ### Artifact Paths
 
@@ -77,7 +83,10 @@ earlier `FAIL`, `BLOCKED`, or timeout attempt.
 
 ### State Machine
 
-1. Validate canonical contract revision, lifecycle, batch, attempt, and owner.
+1. Validate canonical revision, lifecycle, batch, attempt, product/instance/
+   role/profile assignments, decision provenance, Confirmation Lease, partial
+   state, and owner. Audit existing dirty/partial work before dispatch and list
+   what must not be repeated.
 2. Transition canonical status to `ready-for-execution`, increment its revision,
    hash the canonical status file, and write the current attempt Brief with that
    execution revision and canonical SHA-256.
@@ -90,10 +99,12 @@ earlier `FAIL`, `BLOCKED`, or timeout attempt.
 4. Require the attempt Report or Abort Report using the execution revision and
    matching SHA-256;
    then transition status to `ready-for-review` with a new review revision.
-5. Audit scope, evidence, critical commands, production wiring, and required
-   acceptance layers. When an independent auxiliary reviewer is assigned,
-   consume its Review only if its identity and role match the contract and differ
-   from the executor. Rerun critical commands where possible.
+5. Audit actual files and the complete diff, scope, evidence, critical commands,
+   copy/transform/production wiring, claim-to-mechanism support, and required
+   acceptance layers. Consume an assigned independent Review only when its
+   product/instance/role/profile match and its instance differs from the executor.
+   Rerun critical commands and add at least one independent adversarial or real
+   business-chain probe.
 6. Write a Review whose first line is exactly `# Review Result: PASS`,
    `# Review Result: FAIL`, or `# Review Result: BLOCKED`.
 7. Apply the transition:
@@ -129,9 +140,10 @@ invalidate that final evidence.
 
 Every external profile has at least one non-blank `step_critical` and
 `final_critical`. Status references the attempt Report and Review by safe
-project-relative path plus SHA-256. Each artifact embeds a schema-1 manifest
-binding role, result, change, batch, attempt, source canonical
-revision/SHA-256, producing agent identity, and producing role. Review records
+project-relative path plus SHA-256. New artifacts embed a schema-2 manifest
+binding product, instance, role, profile, result, change, batch, attempt, and
+source canonical revision/SHA-256. Historical schema-4/schema-1 evidence remains
+immutable. Review records
 from/to revision and canonical SHA-256 transition evidence; `complete` runtime
 validation requires the actual previous status.
 
@@ -139,12 +151,17 @@ validation requires the actual previous status.
 
 - Codex does not edit implementation files while this skill is active; return
   to the change gate if the user requests implementation.
-- Do not substitute Codex subagents for the named external executor.
+- Do not substitute an unassigned product or instance for a canonical executor or reviewer.
 - Every governed Brief lists allowed/forbidden files, abort conditions, attempt
   Report path, critical evidence, and canonical status fingerprint.
 - External agents must not edit canonical status or readonly fields.
-- External executor and independent reviewer identities must match the canonical
-  assignment; standard/strict work forbids same-agent self-review.
+- External executor and independent reviewer product/instance/role/profile must
+  match the canonical assignment; standard/strict work forbids same-instance
+  self-review even when the product is equal.
+- Platform permission does not grant workflow scope or business/production
+  approval. An invalidated or revoked Confirmation Lease is `BLOCKED`.
+- Executor DONE/PASS is factual Report evidence only and cannot promote canonical
+  state or authorize final completion.
 - Auxiliary `PASS` is advisory. Only Codex may record the authoritative batch or
   final decision.
 - Missing Report/evidence/required real acceptance is `BLOCKED`.

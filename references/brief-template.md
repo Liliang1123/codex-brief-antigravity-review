@@ -25,14 +25,16 @@ docs/agent-collab/<change-id>/status.md
 
 | 字段 | 值 |
 |---|---|
-| `schema_version` | `4` |
+| `schema_version` | `5` |
 | `contract_revision` | `<n>` |
 | `current_batch` / `planned_batches` | `<NN>/<total>` |
 | `attempt` | `<AA>` |
 | `lifecycle_state` | `ready-for-execution` |
-| `executor_agent` | `antigravity-cli` / `grok-cli` |
-| `independent_reviewer_agent` | `codex` / the other auxiliary CLI / compact-only `not-applicable` |
-| `decision_owner` | `codex` |
+| control plane product / instance / role / profile | `codex` / `<id>` / `control-plane` / `control-plane-high` |
+| executor product / instance / role / profile | `<product>` / `<id>` / `executor` / `<profile>` |
+| reviewer product / instance / role / profile | `<product>` / `<different id>` / `independent-reviewer` / `control-plane-high` |
+| `decision_source` | `<allowed provenance>` |
+| Confirmation Lease decision ID / path / SHA-256 / status | `<id>` / `<path>` / `<hash>` / `valid` |
 | canonical SHA-256 | `<64 lowercase hex>` |
 
 若 Contract 缺失、重复、过期、矛盾或不可解析，本 Brief 不得继续，必须交回 `openspec-superpower-change` 或用户。
@@ -42,10 +44,14 @@ docs/agent-collab/<change-id>/status.md
 
 Report 必须回显同一 execution revision 和 canonical SHA-256。Codex 在进入
 `ready-for-review` 前重新计算 canonical 文件哈希；不一致时必须 BLOCKED。
-Report 的 schema-1 manifest 将 `agent_identity` / `agent_role` 绑定为
-canonical `executor_agent` / `executor`。Standard/strict Review 必须使用
-不同的 `independent_reviewer_agent`；只有 compact 可记录带非空理由的
-`not-applicable`，此时 Codex 以 `decision-owner` 执行 inline Review。
+Report 的 schema-2 manifest 将 `agent_product` / `agent_instance_id` /
+`agent_role` / `capability_profile` 绑定为 canonical executor assignment。
+Standard/strict Review 必须使用不同 reviewer instance；产品相同也不能
+self-review。只有 compact 可记录带非空理由的 null reviewer，此时绑定
+control-plane assignment 执行 inline Review。
+
+手工复制本 Brief 不会降级治理。任何 state-changing standard/strict 工作
+仍须引用相同 canonical status、Report path、allow-list 与 evidence chain。
 
 ## 2.2 Evidence Profile
 
@@ -76,6 +82,17 @@ Dispatch 前必须对本 Brief 当前 revision 执行 **Preflight Review**：
   `--previous-status` 验证 proposed transition。
 - `PASS`：仅授权 dispatch，不是实施 Review 或完成证据。
 - Brief revision 未变化时不重复；发生任何语义修改后必须重跑。
+
+## 2.4 Authorization, Lease, Partial State, And Escalation
+
+- Tool/platform authorization：<已有权限；只表示平台可执行>
+- Scope/workflow authorization：<批准 Change/Plan/Brief revision 与 allow-list>
+- Business/production authorization：<required / not-required；证据或用户决定>
+- Confirmation Lease reuse：yes / no；失效原因：<scope/risk/revision/production/user decision>
+- Existing partial/dirty state：<已检查文件与未完成片段>
+- Do-not-repeat scope：<已完成且不得重做的步骤/文件>
+- `mechanical-low` / `cohesive-medium` 遇到歧义、意外失败、安全字段、
+  禁止文件、生产凭据、scope/risk/approval 变化时立即 `BLOCKED`，不得设计或扩展范围。
 
 ## 3. 允许修改的文件
 

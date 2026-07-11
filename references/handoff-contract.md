@@ -2,7 +2,7 @@
 
 The Handoff Contract is the single machine-readable state shared by
 `openspec-superpower-change` and `codex-brief-antigravity-review`. Schema version
-4 applies only to newly created Handoff-backed external execution; standalone
+5 applies only to newly created Handoff-backed external execution; standalone
 and inline work do not create this contract.
 
 ## Canonical Location
@@ -17,7 +17,7 @@ revision, batch, attempt, and SHA-256 fingerprint.
 ````markdown
 <!-- COOP_HANDOFF_CONTRACT_START -->
 ```yaml
-schema_version: 4
+schema_version: 5
 change_id: add-example-change
 mode: approved-implementation
 approval_status: approved
@@ -40,10 +40,28 @@ final_review_result: pending
 final_review_artifact: null
 executor: external-agent
 governor: codex-brief-antigravity-review
-executor_agent: antigravity-cli
-independent_reviewer_agent: grok-cli
-decision_owner: codex
+control_plane_owner:
+  agent_product: codex
+  agent_instance_id: codex-control-01
+  agent_role: control-plane
+  capability_profile: control-plane-high
+executor_assignment:
+  agent_product: antigravity-cli
+  agent_instance_id: antigravity-executor-01
+  agent_role: executor
+  capability_profile: cohesive-medium
+independent_reviewer_assignment:
+  agent_product: grok-cli
+  agent_instance_id: grok-reviewer-01
+  agent_role: independent-reviewer
+  capability_profile: control-plane-high
 independent_review_not_applicable_reason: null
+decision_source: ai-proposed/user-approved
+confirmation_lease:
+  decision_id: decision-001
+  path: docs/agent-collab/add-example-change/confirmation-lease.md
+  sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+confirmation_lease_status: valid
 next_owner: codex-brief-antigravity-review
 step_critical:
   - focused test command
@@ -70,10 +88,12 @@ readonly_fields:
   - planned_batches
   - executor
   - governor
-  - executor_agent
-  - independent_reviewer_agent
-  - decision_owner
+  - control_plane_owner
+  - executor_assignment
+  - independent_reviewer_assignment
   - independent_review_not_applicable_reason
+  - decision_source
+  - confirmation_lease
   - final_critical
   - step_critical
   - business_acceptance
@@ -101,15 +121,27 @@ Required fields include every field in the example.
   non-blank strings for every evidence profile.
 - `readonly_fields`: exactly the immutable field set shown above, without
   duplicates or additional mutable fields.
-- `executor_agent`: `antigravity-cli` or `grok-cli` for this external contract.
-- `independent_reviewer_agent`: `codex`, `antigravity-cli`, `grok-cli`, or
-  `not-applicable`. A concrete reviewer must differ from `executor_agent`.
-- `decision_owner`: exactly `codex`; auxiliary agents cannot authorize a
-  canonical transition or final completion.
-- `independent_review_not_applicable_reason`: a non-blank string only when the
-  risk profile is `compact` and `independent_reviewer_agent` is
-  `not-applicable`; otherwise it is `null`. Standard and strict contracts must
-  bind a distinct concrete reviewer.
+- `control_plane_owner`, `executor_assignment`, and a concrete
+  `independent_reviewer_assignment` contain exactly `agent_product`,
+  `agent_instance_id`, `agent_role`, and `capability_profile`.
+- The control plane is product `codex`, role `control-plane`, profile
+  `control-plane-high`. It alone records authoritative transitions and final
+  completion.
+- The executor role is `executor`; its profile is bounded by the assigned
+  capability ceiling. A standard or strict reviewer uses role
+  `independent-reviewer` and profile `control-plane-high`.
+- Every assigned `agent_instance_id` is a non-sensitive contract-local ID and
+  differs from every other assigned instance. Product equality never permits
+  self-review.
+- `independent_review_not_applicable_reason` is non-blank only for compact work
+  with a null reviewer assignment; otherwise it is `null`.
+- `decision_source` is one of `ai-proposed/user-approved`, `user-originated`,
+  `user-corrected`, `evidence-discovered`, `deferred`, or `revoked`.
+- `confirmation_lease` is an immutable decision-ID/path/SHA-256 reference to a
+  typed lease artifact. Mutable `confirmation_lease_status` starts `valid` and
+  may only move to `deferred` or `revoked`, which forces `blocked`; an old Lease
+  cannot be reactivated. A platform permission cannot satisfy a workflow or
+  business/production gate.
 
 An artifact reference is either `null` or this mapping:
 
@@ -130,7 +162,7 @@ Every referenced file contains exactly one immutable evidence manifest:
 ````markdown
 <!-- COOP_EVIDENCE_MANIFEST_START -->
 ```yaml
-evidence_schema_version: 1
+evidence_schema_version: 2
 evidence_role: batch-review
 evidence_result: pass
 change_id: add-example-change
@@ -138,8 +170,10 @@ current_batch: 1
 attempt: 1
 contract_revision: 3
 canonical_sha256: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
-agent_identity: grok-cli
+agent_product: grok-cli
+agent_instance_id: grok-reviewer-01
 agent_role: independent-reviewer
+capability_profile: control-plane-high
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 ````
@@ -151,14 +185,14 @@ Valid roles are `attempt-report`, `batch-review`, `preflight-review`,
 revision that the artifact reports on, reviews, or verifies; this source
 fingerprint avoids a hash cycle with the new artifact reference.
 
-`agent_identity` is exactly `codex`, `antigravity-cli`, or `grok-cli`;
-aliases are rejected. `agent_role` is `executor`, `independent-reviewer`, or
-`decision-owner`. Attempt Reports bind the canonical executor. Batch Reviews
-bind the canonical independent reviewer, except a compact
-`not-applicable` path binds Codex as `decision-owner`. Preflight Review,
-timeout audit, final verification, and final Review bind Codex as
-`decision-owner`. The timeout-audit shared-artifact exception keeps that Codex
-identity even when it occupies the Report field.
+For schema-5 evidence, `agent_product`, `agent_instance_id`, `agent_role`, and
+`capability_profile` exactly match the canonical assignment. Attempt Reports
+bind the executor assignment. Batch Reviews bind the independent reviewer,
+except a compact null-reviewer path binds the control plane. Preflight Review,
+timeout audit, final verification, and final Review bind the control plane. The
+timeout-audit shared-artifact exception keeps that control-plane identity even
+when it occupies the Report field. Historical schema-4 contracts retain their
+existing schema-1 `agent_identity` evidence and are never rewritten as schema 5.
 
 Runtime status validation checks file existence, non-empty content, SHA-256,
 role-to-state binding, result-to-status binding, batch/attempt freshness, source
@@ -172,8 +206,9 @@ SHA-256.
 This is an external execution contract: `executor` is `external-agent`,
 `governor` is `codex-brief-antigravity-review`, and mode is
 `approved-implementation`, approved `self-evolution`, or `direct-change`.
-The immutable concrete identities determine who executes and independently
-Reviews; only `decision_owner: codex` records the authoritative decision.
+The immutable product/instance/role/profile assignments determine who executes
+and independently Reviews; only the bound Codex `control_plane_owner` records
+the authoritative decision.
 
 ## Lifecycle And Review Loop
 
@@ -284,11 +319,12 @@ retained in repository evidence/history. A hostile actor able to forge the
 prior state and all artifacts is outside this lightweight validator's threat
 model; append-only journals or signatures would be a separate, heavier design.
 
-## Upgrade From Schema 3
+## Upgrade From Schema 4
 
-Schema 4 is a hard switch for contracts created after deployment. Before the
-switch, inventory every known active schema-3 canonical status and require it to
-reach `complete` under the existing v3 workflow. Do not rewrite, silently
-migrate, ignore, or abandon an active v3 contract. Retain the no-active-v3
-inventory result as upgrade evidence. Historical complete v3 contracts remain
-immutable history and are not revalidated as new schema-4 contracts.
+Schema 5 is a hard switch for contracts created after deployment. Before the
+switch, inventory every known active schema-4 canonical status and require it to
+reach `complete` under the existing v4 workflow. Do not rewrite, silently
+migrate, ignore, or abandon an active v4 contract. Retain the no-active-v4
+inventory result as upgrade evidence. Historical complete v4 contracts and
+their schema-1 evidence remain immutable history and are not revalidated as new
+schema-5 contracts or schema-2 evidence.

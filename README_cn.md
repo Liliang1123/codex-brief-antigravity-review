@@ -16,7 +16,10 @@
 - `FAIL`/`BLOCKED` 保留 attempt 历史，修正/解阻后必须再 Review。
 - 只以 canonical `status.md` 保存共享状态，最终批次 PASS 回交总入口验证。
 - Dispatch 前对当前 revision 的 Brief 执行 Preflight Review。
-- schema 3 使用项目相对 Report/Review 路径和 SHA-256 指纹。
+- schema 5 / schema 2 证据绑定产品、实例、角色、profile、决策来源、Lease
+  与 SHA-256；同产品也禁止同实例自审。
+- 手工复制的 state-changing standard/strict Brief 仍走 canonical Handoff；
+  High Review 必须检查真实 diff、生产 wiring、机制证据和独立探针。
 
 ## 为什么需要它
 

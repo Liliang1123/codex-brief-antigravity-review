@@ -18,10 +18,12 @@ It is intended for workflows where Codex should design, dispatch, and audit work
 - Preserves `FAIL`/`BLOCKED` attempt history and requires correction or recovery followed by another Review.
 - Uses canonical `status.md` for shared state and returns final batch `PASS` to the change gate for final verification.
 - Runs a current-revision Brief Preflight Review before dispatch.
-- Uses schema-4 agent-bound Handoff state and schema-1 project-relative
-  Report/Review evidence manifests plus SHA-256 fingerprints.
-- Accepts Antigravity CLI or Grok CLI as a bound executor/reviewer while Codex
-  remains the only authoritative transition and completion owner.
+- Uses schema-5 Handoff state and schema-2 evidence with product, instance,
+  role, profile, provenance, Lease, and SHA-256 binding.
+- Governs manually copied state-changing standard/strict Briefs through the same
+  route and rejects same-instance self-review even for one product.
+- Requires High Review of actual diffs, production wiring, claims/mechanisms,
+  critical reruns, and an independent adversarial or business-chain probe.
 
 ## Why It Exists
 

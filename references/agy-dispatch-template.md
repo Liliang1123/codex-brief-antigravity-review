@@ -10,9 +10,10 @@ docs/agent-collab/<change-id>/<NN>-attempt-<AA>-brief.md
 Canonical status（只读，不得修改）：
 docs/agent-collab/<change-id>/status.md
 Execution revision / canonical SHA-256：<revision> / <64 lowercase hex>
-Executor identity：antigravity-cli
-Independent reviewer identity：<grok-cli / codex / compact not-applicable>
-Decision owner：codex
+Executor product / instance / role / profile：antigravity-cli / <id> / executor / <profile>
+Reviewer product / instance / role / profile：<values; different instance>
+Control plane product / instance / role / profile：codex / <id> / control-plane / control-plane-high
+Decision source / Confirmation Lease：<provenance> / <decision-id/path/hash>
 
 执行完成后，请生成报告：
 docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report.md
@@ -26,11 +27,12 @@ docs/agent-collab/<change-id>/<NN>-attempt-<AA>-report-abort.md
 - 禁止 git add / git commit / git reset / git clean
 - 必须运行 Brief 中列出的验证命令
 - 不得修改 canonical status 或复制 Handoff Contract marker block
-- 报告必须记录 schema_version 4 / contract_revision / batch / attempt 指纹和
+- 报告必须记录 schema_version 5 / contract_revision / batch / attempt 指纹和
   与 Brief 相同的 canonical SHA-256
-- 报告必须内嵌完整 schema-1 `attempt-report` evidence manifest；role、result、
-  change、batch、attempt、execution revision/SHA-256、
-  `agent_identity: antigravity-cli`、`agent_role: executor` 缺一不可；禁止别名或冒充
+- 报告必须内嵌完整 schema-2 `attempt-report` evidence manifest；result、
+  change、batch、attempt、execution revision/SHA-256、agent product/instance/
+  role/profile 缺一不可；禁止别名、实例冒充或 profile 越权
+- 平台命令权限不是业务/生产批准；Lease 失效、scope/risk/approval 变化必须 BLOCKED
 - 报告需包含修改文件、验证命令与结果、Evidence 表、raw/summary 产物路径、是否偏离 Brief、剩余风险
 - 如果 Brief 要求 server/API/business-chain 回归，pytest 通过不能替代真实链路验证
 - 缺少关键证据时必须写 BLOCKED，不得写 PASS

@@ -55,8 +55,87 @@ def evidence_manifest(
     )
 
 
+def schema5_evidence_manifest(
+    role: str,
+    result: str,
+    change_id: str = "add-example-change",
+    current_batch: int = 1,
+    attempt: int = 1,
+    contract_revision: int = 1,
+    canonical_sha256: str = "b" * 64,
+    high_review: bool = True,
+) -> str:
+    assignments = {
+        "attempt-report": ("antigravity-cli", "antigravity-executor-01", "executor", "cohesive-medium"),
+        "batch-review": ("grok-cli", "grok-reviewer-01", "independent-reviewer", "control-plane-high"),
+        "preflight-review": ("codex", "codex-control-01", "control-plane", "control-plane-high"),
+        "timeout-audit": ("codex", "codex-control-01", "control-plane", "control-plane-high"),
+        "final-verification": ("codex", "codex-control-01", "control-plane", "control-plane-high"),
+        "final-review": ("codex", "codex-control-01", "control-plane", "control-plane-high"),
+    }
+    product, instance, agent_role, profile = assignments[role]
+    text = (
+        "<!-- COOP_EVIDENCE_MANIFEST_START -->\n"
+        "```yaml\n"
+        "evidence_schema_version: 2\n"
+        f"evidence_role: {role}\n"
+        f"evidence_result: {result}\n"
+        f"change_id: {change_id}\n"
+        f"current_batch: {current_batch}\n"
+        f"attempt: {attempt}\n"
+        f"contract_revision: {contract_revision}\n"
+        f"canonical_sha256: {canonical_sha256}\n"
+        f"agent_product: {product}\n"
+        f"agent_instance_id: {instance}\n"
+        f"agent_role: {agent_role}\n"
+        f"capability_profile: {profile}\n"
+        "```\n"
+        "<!-- COOP_EVIDENCE_MANIFEST_END -->\n"
+    )
+    if high_review and role in {"batch-review", "final-review"}:
+        text += (
+            "\nActual files and complete diff inspected\n"
+            "Copy/transform/production wiring trace\n"
+            "Critical reruns\n"
+            "Claim-to-mechanism support\n"
+            "Independent adversarial probe\n"
+        )
+    return text
+
+
+def materialize_schema5_lease(data: dict, root: Path) -> None:
+    text = (
+        "<!-- COOP_CONFIRMATION_LEASE_START -->\n"
+        "```yaml\n"
+        "decision_id: decision-001\n"
+        "artifact_revision: 2\n"
+        f"artifact_sha256: {'a' * 64}\n"
+        "approved_scope: approved source implementation\n"
+        "approved_actions:\n"
+        "  - run-safe-tests\n"
+        "risk_profile: standard\n"
+        "decision_source: ai-proposed/user-approved\n"
+        "owner_instance_id: codex-control-01\n"
+        "status: valid\n"
+        "invalidation_conditions:\n"
+        "  - scope-change\n"
+        "```\n"
+        "<!-- COOP_CONFIRMATION_LEASE_END -->\n"
+    )
+    target = root / data["confirmation_lease"]["path"]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    data["confirmation_lease"]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+
+
 def schema4_contract(validator, handoff: str, **overrides) -> dict:
     data = validator.extract_handoff_contract(handoff, "handoff")
+    for key in (
+        "control_plane_owner", "executor_assignment",
+        "independent_reviewer_assignment", "decision_source",
+        "confirmation_lease", "confirmation_lease_status",
+    ):
+        data.pop(key, None)
     identity_fields = {
         "executor_agent": "antigravity-cli",
         "independent_reviewer_agent": "grok-cli",
@@ -64,9 +143,7 @@ def schema4_contract(validator, handoff: str, **overrides) -> dict:
         "independent_review_not_applicable_reason": None,
     }
     data.update(schema_version=4, **identity_fields)
-    data["readonly_fields"] = list(dict.fromkeys([
-        *data["readonly_fields"], *identity_fields,
-    ]))
+    data["readonly_fields"] = list(validator.LEGACY_IMMUTABLE_FIELDS)
     data.update(overrides)
     return data
 
@@ -143,9 +220,9 @@ class WorkflowRulesTest(unittest.TestCase):
         with self.assertRaisesRegex(AssertionError, "complete"):
             self.validator.validate_handoff_contract(data, "invalid-complete")
 
-    def test_handoff_schema_has_evidence_bound_v4_fields(self):
+    def test_handoff_schema_has_evidence_bound_v5_fields(self):
         for expected in (
-            "schema_version: 4",
+            "schema_version: 5",
             "attempt_report_artifact:",
             "last_review_artifact:",
             "final_verification_artifact:",
@@ -156,12 +233,11 @@ class WorkflowRulesTest(unittest.TestCase):
     def test_schema4_requires_bound_agent_identities_and_codex_decision_owner(self):
         data = schema4_contract(self.validator, self.handoff)
         self.validator.validate_handoff_contract(data, "schema4-identities")
-        self.assertEqual(self.validator.SCHEMA_VERSION, 4)
+        self.assertEqual(self.validator.LEGACY_SCHEMA_VERSION, 4)
         for field in (
             "executor_agent", "independent_reviewer_agent", "decision_owner",
-            "independent_review_not_applicable_reason",
         ):
-            self.assertIn(field, self.validator.IMMUTABLE_FIELDS)
+            self.assertIn(field, self.validator.LEGACY_IMMUTABLE_FIELDS)
 
         for field, value in (
             ("executor_agent", "agy"),
@@ -175,7 +251,7 @@ class WorkflowRulesTest(unittest.TestCase):
                     self.validator.validate_handoff_contract(invalid, "invalid-identity")
 
     def test_standard_and_strict_require_a_distinct_reviewer(self):
-        self.assertEqual(self.validator.SCHEMA_VERSION, 4)
+        self.assertEqual(self.validator.LEGACY_SCHEMA_VERSION, 4)
         for profile in ("standard", "strict"):
             same_agent = schema4_contract(
                 self.validator, self.handoff, risk_profile=profile,
@@ -519,9 +595,10 @@ class WorkflowRulesTest(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             review = root / "docs" / "review" / "batch.md"
             review.parent.mkdir(parents=True)
-            review.write_text(evidence_manifest("batch-review", "pass"), encoding="utf-8")
+            review.write_text(schema5_evidence_manifest("batch-review", "pass"), encoding="utf-8")
             data["last_review_artifact"]["sha256"] = hashlib.sha256(review.read_bytes()).hexdigest()
             self.validator.validate_evidence_artifacts(data, root, "runtime")
             data["last_review_artifact"]["sha256"] = "0" * 64
@@ -721,6 +798,7 @@ class WorkflowRulesTest(unittest.TestCase):
             base = Path(directory)
             root = base / "root"
             root.mkdir()
+            materialize_schema5_lease(data, root)
             with self.assertRaisesRegex(AssertionError, "exist and be non-empty"):
                 self.validator.validate_evidence_artifacts(data, root, "missing")
 
@@ -728,7 +806,7 @@ class WorkflowRulesTest(unittest.TestCase):
             review = root / "docs" / "review" / "batch.md"
             report.parent.mkdir(parents=True)
             review.parent.mkdir(parents=True)
-            report.write_text(evidence_manifest("attempt-report", "pass"), encoding="utf-8")
+            report.write_text(schema5_evidence_manifest("attempt-report", "pass"), encoding="utf-8")
             review.write_text("", encoding="utf-8")
             data["attempt_report_artifact"]["sha256"] = hashlib.sha256(report.read_bytes()).hexdigest()
             with self.assertRaisesRegex(AssertionError, "exist and be non-empty"):
@@ -877,10 +955,11 @@ class WorkflowRulesTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             for key, (path, role, result, revision) in specs.items():
                 target = root / path
                 target.write_text(
-                    evidence_manifest(role, result, current_batch=2, contract_revision=revision),
+                    schema5_evidence_manifest(role, result, current_batch=2, contract_revision=revision),
                     encoding="utf-8",
                 )
                 data[key] = {"path": path, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
@@ -892,8 +971,9 @@ class WorkflowRulesTest(unittest.TestCase):
         data = self.validator.extract_handoff_contract(self.handoff, "handoff")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             timeout = root / "timeout-audit.md"
-            timeout.write_text(evidence_manifest("timeout-audit", "blocked"), encoding="utf-8")
+            timeout.write_text(schema5_evidence_manifest("timeout-audit", "blocked"), encoding="utf-8")
             ref = {"path": timeout.name, "sha256": hashlib.sha256(timeout.read_bytes()).hexdigest()}
             data.update(
                 lifecycle_state="blocked",
@@ -934,10 +1014,11 @@ class WorkflowRulesTest(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             for key, (path, role, result, revision) in specs.items():
                 target = root / path
                 target.write_text(
-                    evidence_manifest(role, result, current_batch=2, contract_revision=revision),
+                    schema5_evidence_manifest(role, result, current_batch=2, contract_revision=revision),
                     encoding="utf-8",
                 )
                 data[key] = {"path": path, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
@@ -972,6 +1053,7 @@ class WorkflowRulesTest(unittest.TestCase):
         data.update(attempt=9, contract_revision=10)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             specs = {
                 "attempt_report_artifact": ("report.md", "attempt-report", 1),
                 "last_review_artifact": ("review.md", "batch-review", 2),
@@ -979,7 +1061,7 @@ class WorkflowRulesTest(unittest.TestCase):
             for key, (path, role, revision) in specs.items():
                 target = root / path
                 target.write_text(
-                    evidence_manifest(role, "pass", current_batch=1, attempt=1, contract_revision=revision),
+                    schema5_evidence_manifest(role, "pass", current_batch=1, attempt=1, contract_revision=revision),
                     encoding="utf-8",
                 )
                 data[key] = {"path": path, "sha256": hashlib.sha256(target.read_bytes()).hexdigest()}
@@ -1001,6 +1083,7 @@ class WorkflowRulesTest(unittest.TestCase):
         previous_sha = hashlib.sha256(previous_bytes).hexdigest()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             specs = {
                 "attempt_report_artifact": ("report.md", "attempt-report", "pass", 1, "b" * 64),
                 "last_review_artifact": ("batch-review.md", "batch-review", "pass", 2, "c" * 64),
@@ -1010,7 +1093,7 @@ class WorkflowRulesTest(unittest.TestCase):
             for key, (path, role, result, revision, source_sha) in specs.items():
                 target = root / path
                 target.write_text(
-                    evidence_manifest(
+                    schema5_evidence_manifest(
                         role,
                         result,
                         current_batch=2,
@@ -1057,14 +1140,15 @@ class WorkflowRulesTest(unittest.TestCase):
         previous_sha = hashlib.sha256(b"reviewed attempt 3 status\n").hexdigest()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            materialize_schema5_lease(data if "data" in locals() else current, root)
             report = root / "report.md"
             review = root / "review.md"
             report.write_text(
-                evidence_manifest("attempt-report", "pass", attempt=2, contract_revision=1),
+                schema5_evidence_manifest("attempt-report", "pass", attempt=2, contract_revision=1),
                 encoding="utf-8",
             )
             review.write_text(
-                evidence_manifest(
+                schema5_evidence_manifest(
                     "batch-review",
                     "pass",
                     attempt=2,
@@ -1097,6 +1181,295 @@ class WorkflowRulesTest(unittest.TestCase):
         )
         self.assertNotEqual(0, result.returncode)
         self.assertIn(str(missing), result.stdout + result.stderr)
+
+
+    def _valid_lease(self):
+        return {
+            "decision_id": "decision-001",
+            "artifact_revision": 2,
+            "artifact_sha256": "a" * 64,
+            "approved_scope": "approved source implementation",
+            "approved_actions": ["run-safe-tests", "fix-review-finding"],
+            "risk_profile": "standard",
+            "decision_source": "ai-proposed/user-approved",
+            "owner_instance_id": "codex-control-01",
+            "status": "valid",
+            "invalidation_conditions": ["scope-change", "risk-change", "user-correction"],
+        }
+
+    def _valid_review_evidence(self):
+        return {
+            "actual_diff_inspected": True,
+            "production_wiring_trace": ["source -> transform -> runtime"],
+            "critical_reruns": ["python3 -m unittest focused -v"],
+            "independent_probe": {
+                "kind": "adversarial",
+                "command": "probe --bounded-input",
+                "result": "pass",
+            },
+            "copy_fields": {
+                "expected": ["id", "version"],
+                "observed": ["id", "version"],
+            },
+            "claims": [{
+                "claim": "restart recovery",
+                "mechanism": "runner retry state machine",
+                "evidence": "focused recovery probe",
+            }],
+        }
+
+    def _schema5_contract(self):
+        data = self.validator.extract_handoff_contract(self.handoff, "handoff")
+        for key in (
+            "executor_agent", "independent_reviewer_agent", "decision_owner",
+        ):
+            data.pop(key, None)
+        data.update({
+            "schema_version": 5,
+            "control_plane_owner": {
+                "agent_product": "codex",
+                "agent_instance_id": "codex-control-01",
+                "agent_role": "control-plane",
+                "capability_profile": "control-plane-high",
+            },
+            "executor_assignment": {
+                "agent_product": "codex",
+                "agent_instance_id": "codex-executor-01",
+                "agent_role": "executor",
+                "capability_profile": "cohesive-medium",
+            },
+            "independent_reviewer_assignment": {
+                "agent_product": "codex",
+                "agent_instance_id": "codex-reviewer-01",
+                "agent_role": "independent-reviewer",
+                "capability_profile": "control-plane-high",
+            },
+            "decision_source": "ai-proposed/user-approved",
+            "confirmation_lease": {
+                "decision_id": "decision-001",
+                "path": "docs/agent-collab/add-example-change/confirmation-lease.md",
+                "sha256": "c" * 64,
+            },
+        })
+        data["readonly_fields"] = list(self.validator.IMMUTABLE_FIELDS)
+        return data
+
+    def test_tiered_01_platform_permission_reuses_safe_command_lease(self):
+        validate = getattr(self.validator, "validate_confirmation_lease", None)
+        self.assertTrue(callable(validate), "Confirmation Lease behavior is not implemented")
+        result = validate(self._valid_lease(), {
+            "action": "run-safe-tests",
+            "artifact_revision": 2,
+            "artifact_sha256": "a" * 64,
+            "scope": "approved source implementation",
+            "risk_profile": "standard",
+            "platform_authorized": True,
+            "business_authorized": False,
+        })
+        self.assertEqual("reuse", result)
+
+    def test_tiered_02_platform_permission_cannot_authorize_production_deletion(self):
+        validate = getattr(self.validator, "validate_confirmation_lease", None)
+        self.assertTrue(callable(validate), "layered authorization behavior is not implemented")
+        with self.assertRaisesRegex(AssertionError, "business/production authorization"):
+            validate(self._valid_lease(), {
+                "action": "production-deletion",
+                "artifact_revision": 2,
+                "artifact_sha256": "a" * 64,
+                "scope": "approved source implementation",
+                "risk_profile": "strict",
+                "platform_authorized": True,
+                "business_authorized": False,
+            })
+
+    def test_tiered_03_ai_proposed_user_approved_provenance_is_preserved(self):
+        validate = getattr(self.validator, "validate_decision_source", None)
+        self.assertTrue(callable(validate), "decision provenance behavior is not implemented")
+        self.assertEqual(
+            "ai-proposed/user-approved",
+            validate("ai-proposed/user-approved"),
+        )
+        with self.assertRaisesRegex(AssertionError, "decision_source"):
+            validate("user-originated-from-ai-proposal")
+
+    def test_tiered_04_mechanical_low_ambiguity_blocks_instead_of_designing(self):
+        validate = getattr(self.validator, "validate_capability_action", None)
+        self.assertTrue(callable(validate), "capability authority behavior is not implemented")
+        self.assertEqual(
+            "BLOCKED",
+            validate("mechanical-low", "bounded-edit", ambiguity=True),
+        )
+
+    def test_tiered_05_high_review_detects_copy_field_loss_after_executor_pass(self):
+        validate = getattr(self.validator, "validate_high_review_evidence", None)
+        self.assertTrue(callable(validate), "High Review behavior is not implemented")
+        evidence = self._valid_review_evidence()
+        evidence["copy_fields"]["observed"] = ["id"]
+        with self.assertRaisesRegex(AssertionError, "copy-field loss"):
+            validate(evidence)
+
+    def test_tiered_06_high_review_requires_independent_adversarial_probe(self):
+        validate = getattr(self.validator, "validate_high_review_evidence", None)
+        self.assertTrue(callable(validate), "independent probe behavior is not implemented")
+        evidence = self._valid_review_evidence()
+        evidence["independent_probe"] = None
+        with self.assertRaisesRegex(AssertionError, "independent.*probe"):
+            validate(evidence)
+
+    def test_tiered_07_high_review_traces_claim_to_runtime_mechanism(self):
+        validate = getattr(self.validator, "validate_high_review_evidence", None)
+        self.assertTrue(callable(validate), "claim-to-mechanism behavior is not implemented")
+        evidence = self._valid_review_evidence()
+        evidence["claims"][0]["mechanism"] = ""
+        with self.assertRaisesRegex(AssertionError, "claim-to-mechanism"):
+            validate(evidence)
+
+    def test_tiered_08_same_product_instances_cannot_self_review(self):
+        contract = self._schema5_contract()
+        self.validator.validate_handoff_contract(contract, "same-product-distinct-instance")
+        contract["independent_reviewer_assignment"]["agent_instance_id"] = "codex-executor-01"
+        with self.assertRaisesRegex(AssertionError, "instance"):
+            self.validator.validate_handoff_contract(contract, "same-instance-self-review")
+
+    def test_tiered_09_single_correction_creates_candidate_without_promotion(self):
+        evaluate = getattr(self.validator, "evaluate_learning_candidate", None)
+        self.assertTrue(callable(evaluate), "Learning Candidate behavior is not implemented")
+        result = evaluate({
+            "severity": "low",
+            "scope": "task-local",
+            "independent_reproductions": 1,
+            "event_kind": "wording-correction",
+        })
+        self.assertTrue(result["candidate_created"])
+        self.assertFalse(result["proposal_allowed"])
+        self.assertFalse(result["implementation_allowed"])
+
+    def test_tiered_10_high_severity_candidate_is_proposal_only_without_approval(self):
+        evaluate = getattr(self.validator, "evaluate_learning_candidate", None)
+        self.assertTrue(callable(evaluate), "Learning Candidate promotion behavior is not implemented")
+        result = evaluate({
+            "severity": "high",
+            "scope": "global",
+            "independent_reproductions": 1,
+            "event_kind": "false-pass",
+            "openspec_approval": False,
+        })
+        self.assertTrue(result["proposal_allowed"])
+        self.assertFalse(result["implementation_allowed"])
+
+
+    def _lease_artifact_text(
+        self, owner_instance_id="codex-control-01", risk_profile="standard",
+        decision_source="ai-proposed/user-approved",
+    ):
+        return (
+            "<!-- COOP_CONFIRMATION_LEASE_START -->\n"
+            "```yaml\n"
+            "decision_id: decision-001\n"
+            "artifact_revision: 2\n"
+            f"artifact_sha256: {'a' * 64}\n"
+            "approved_scope: approved source implementation\n"
+            "approved_actions:\n"
+            "  - run-safe-tests\n"
+            f"risk_profile: {risk_profile}\n"
+            f"decision_source: {decision_source}\n"
+            f"owner_instance_id: {owner_instance_id}\n"
+            "status: valid\n"
+            "invalidation_conditions:\n"
+            "  - scope-change\n"
+            "```\n"
+            "<!-- COOP_CONFIRMATION_LEASE_END -->\n"
+        )
+
+    def test_schema5_runtime_validates_confirmation_lease_artifact(self):
+        validate = getattr(self.validator, "validate_confirmation_lease_artifact", None)
+        self.assertTrue(callable(validate), "runtime lease artifact validation is not implemented")
+        data = self._schema5_contract()
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / data["confirmation_lease"]["path"]
+            target.parent.mkdir(parents=True)
+            target.write_text(self._lease_artifact_text(), encoding="utf-8")
+            data["confirmation_lease"]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            validate(data, root, "valid-lease")
+            target.write_text(self._lease_artifact_text("wrong-owner"), encoding="utf-8")
+            data["confirmation_lease"]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(AssertionError, "owner_instance_id"):
+                validate(data, root, "wrong-owner")
+            target.write_text(self._lease_artifact_text(risk_profile="strict"), encoding="utf-8")
+            data["confirmation_lease"]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(AssertionError, "risk_profile"):
+                validate(data, root, "wrong-risk")
+            target.write_text(self._lease_artifact_text(decision_source="revoked"), encoding="utf-8")
+            data["confirmation_lease"]["sha256"] = hashlib.sha256(target.read_bytes()).hexdigest()
+            with self.assertRaisesRegex(AssertionError, "revoked|valid"):
+                validate(data, root, "revoked-lease")
+
+    def test_schema5_high_review_artifact_requires_mechanism_sections(self):
+        validate = getattr(self.validator, "validate_high_review_artifact_text", None)
+        self.assertTrue(callable(validate), "runtime High Review artifact validation is not implemented")
+        incomplete = schema5_evidence_manifest("batch-review", "pass", high_review=False)
+        with self.assertRaisesRegex(AssertionError, "actual diff|production wiring|claim-to-mechanism|independent"):
+            validate(incomplete, "incomplete-review")
+        complete = incomplete + (
+            "\nActual files and complete diff inspected\n"
+            "Copy/transform/production wiring trace\n"
+            "Critical reruns\n"
+            "Claim-to-mechanism support\n"
+            "Independent adversarial probe\n"
+        )
+        validate(complete, "complete-review")
+
+    def test_schema4_inventory_blocks_active_and_allows_complete_history(self):
+        inventory = getattr(self.validator, "inventory_active_schema4_statuses", None)
+        self.assertTrue(callable(inventory), "schema-4 drain inventory is not implemented")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            status = root / "docs" / "agent-collab" / "legacy" / "status.md"
+            status.parent.mkdir(parents=True)
+            status.write_text(
+                "<!-- COOP_HANDOFF_CONTRACT_START -->\n```yaml\n"
+                "schema_version: 4\nchange_id: legacy\ncontract_revision: 2\n"
+                "lifecycle_state: ready-for-execution\n````\n"
+                "<!-- COOP_HANDOFF_CONTRACT_END -->\n",
+                encoding="utf-8",
+            )
+            self.assertEqual([status.resolve()], inventory([root]))
+            status.write_text(status.read_text().replace("ready-for-execution", "complete"), encoding="utf-8")
+            self.assertEqual([], inventory([root]))
+
+
+    def test_schema5_revoked_lease_blocks_and_cannot_be_reactivated(self):
+        before = self._schema5_contract()
+        before["confirmation_lease_status"] = "valid"
+        after = dict(before)
+        after.update(
+            lifecycle_state="blocked",
+            contract_revision=before["contract_revision"] + 1,
+            last_review_result="blocked",
+            last_review_artifact=artifact("docs/review/revoked-lease.md"),
+            blocked_reason="user revoked the prior decision",
+            blocker_owner="user",
+            resume_condition="create a new explicitly authorized contract and Lease",
+            next_owner="user",
+            confirmation_lease_status="revoked",
+        )
+        self.validator.validate_transition(before, after, "revoke-lease")
+        recovered = dict(after)
+        recovered.update(
+            lifecycle_state="ready-for-execution",
+            contract_revision=after["contract_revision"] + 1,
+            attempt=after["attempt"] + 1,
+            last_review_result="not-run",
+            last_review_artifact=None,
+            blocked_reason=None,
+            blocker_owner="none",
+            resume_condition=None,
+            next_owner="external-agent",
+            confirmation_lease_status="valid",
+        )
+        with self.assertRaisesRegex(AssertionError, "revoked|new.*Lease|reactivat"):
+            self.validator.validate_transition(after, recovered, "reactivate-old-lease")
 
 
 if __name__ == "__main__":

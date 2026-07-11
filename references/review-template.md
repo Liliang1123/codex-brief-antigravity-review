@@ -6,7 +6,7 @@
 
 <!-- COOP_EVIDENCE_MANIFEST_START -->
 ```yaml
-evidence_schema_version: 1
+evidence_schema_version: 2
 evidence_role: batch-review
 evidence_result: pass
 change_id: <change-id>
@@ -14,8 +14,10 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <reviewed canonical revision>
 canonical_sha256: <reviewed canonical SHA-256>
-agent_identity: <canonical reviewer identity>
+agent_product: <canonical reviewer product>
+agent_instance_id: <canonical reviewer instance>
 agent_role: independent-reviewer
+capability_profile: control-plane-high
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
@@ -25,11 +27,10 @@ agent_role: independent-reviewer
 后不得改写。`contract_revision` 和 `canonical_sha256` 指向本 Review
 实际读取的 transition 前 canonical status。
 
-Standard/strict batch Review 的 `agent_identity` 必须等于 immutable
-`independent_reviewer_agent`、不同于 `executor_agent`，且 `agent_role` 为
-`independent-reviewer`。Compact `not-applicable` reviewer 使用
-`codex` / `decision-owner`。Preflight 和 final Review 也使用
-`codex` / `decision-owner`。别名和 executor self-review 均无效。
+Standard/strict batch Review 的 product/instance/role/profile 必须等于
+immutable reviewer assignment，且 reviewer instance 不同于 executor instance；
+产品相同也不能 self-review。Compact null reviewer、Preflight 与 final Review
+绑定 control-plane assignment。别名、实例冒充和 executor self-review 均无效。
 
 Preflight 只使用 `PASS`/`BLOCKED`。仅 `BLOCKED` Preflight 以
 `preflight-review: blocked` 绑定 canonical `blocked` 状态；Preflight
@@ -117,7 +118,7 @@ git status --short
 | 字段 | Brief | Report/Status | 结论 |
 |---|---|---|---|
 | `change_id` | `<value>` | `<value>` | PASS/FAIL/BLOCKED |
-| `schema_version` | `4` | `4` | PASS/FAIL/BLOCKED |
+| `schema_version` | `5` | `5` | PASS/FAIL/BLOCKED |
 | Execution revision | Brief `<n>` | Report `<n>` | PASS/FAIL/BLOCKED |
 | Execution canonical SHA-256 | Brief `<hash>` | Report/recomputed `<hash>` | PASS/FAIL/BLOCKED |
 | Review revision | expected `<n+1>` | canonical status `<n+1>` | PASS/FAIL/BLOCKED |
@@ -126,9 +127,10 @@ git status --short
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` | `<AA>` / `<state>` | PASS/FAIL/BLOCKED |
 | `next_owner` | `<owner>` | `<owner>` | PASS/FAIL/BLOCKED |
 | `verification_strategy` | `<summary>` | `<summary>` | PASS/FAIL/BLOCKED |
-| `executor_agent` | `<identity>` | `<identity>` | PASS/FAIL/BLOCKED |
-| `independent_reviewer_agent` | `<identity>` | `<identity>` | PASS/FAIL/BLOCKED |
-| `decision_owner` | `codex` | `codex` | PASS/FAIL/BLOCKED |
+| control plane product / instance / role / profile | `<values>` | `<values>` | PASS/FAIL/BLOCKED |
+| executor product / instance / role / profile | `<values>` | `<values>` | PASS/FAIL/BLOCKED |
+| reviewer product / instance / role / profile | `<values>` | `<values>` | PASS/FAIL/BLOCKED |
+| decision source / Confirmation Lease / status | `<values>` | `<values>` | PASS/FAIL/BLOCKED |
 
 Transition evidence（from/to revision 与 SHA-256）：
 
@@ -139,6 +141,20 @@ Transition evidence（from/to revision 与 SHA-256）：
 | transition validator result | PASS / FAIL / BLOCKED |
 | `attempt_report_artifact` path / SHA-256 | `<path>` / `<hash>` |
 | `last_review_artifact` path / SHA-256 | `<path>` / `<hash after this Review is written>` |
+
+## 4.2 High Review Mechanism Audit
+
+| Required evidence | Result | Artifact / path:line |
+|---|---|---|
+| actual files and complete diff inspected | PASS/FAIL/BLOCKED | `<diff/path>` |
+| copy/transform/production wiring trace | PASS/FAIL/BLOCKED | `<chain>` |
+| `step_critical` / `final_critical` rerun | PASS/FAIL/BLOCKED | `<output>` |
+| claim-to-mechanism support | PASS/FAIL/BLOCKED | `<runner/runtime mechanism>` |
+| independent adversarial or real business-chain probe | PASS/FAIL/BLOCKED | `<bounded probe>` |
+
+A green executor test is insufficient when a copied field is lost, production
+wiring is absent, or a behavior claim is only metadata. Any such finding is
+`FAIL` or `BLOCKED` and must enter a fresh fix -> verify -> Review loop.
 
 ## 5. 子问题覆盖矩阵
 

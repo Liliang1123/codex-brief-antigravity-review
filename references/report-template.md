@@ -5,7 +5,7 @@
 
 <!-- COOP_EVIDENCE_MANIFEST_START -->
 ```yaml
-evidence_schema_version: 1
+evidence_schema_version: 2
 evidence_role: attempt-report
 evidence_result: pass
 change_id: <change-id>
@@ -13,16 +13,18 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <execution revision from Brief>
 canonical_sha256: <execution canonical SHA-256 from Brief>
-agent_identity: <canonical executor_agent>
+agent_product: <canonical executor product>
+agent_instance_id: <canonical executor instance>
 agent_role: executor
+capability_profile: <canonical executor profile>
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
 将 `evidence_result` 改为本 Report 的实际 `pass`、`fail` 或
 `blocked`。四个坐标字段必须回显 Brief 的同一 execution fingerprint；
 保存并计算 SHA-256 后不得再改写 manifest 或正文。
-`agent_identity` 只接受 canonical `antigravity-cli` 或 `grok-cli`；别名、
-Reviewer 身份或 `decision-owner` 角色均不是有效执行报告。
+四个 assignment 字段必须逐字匹配 canonical executor；产品别名、实例
+冒充、Reviewer 身份或越权 profile 均不是有效执行报告。
 
 ## 结论
 
@@ -66,6 +68,9 @@ Staged 改动：无 / 有，说明：<details>
 Untracked 文件：无 / 有，说明：<details>
 范围外改动：无 / 有，说明：<details>
 
+> Executor 的 DONE/PASS 只是事实报告，不得修改 canonical state、推广证据、
+> 扩大批准范围或声明权威完成。
+
 ## Diff Summary
 
 ```bash
@@ -75,6 +80,12 @@ git diff --stat
 关键变更：
 - `<path>:Lx-Ly` — <变更内容与目的>
 
+Copy / transform / production wiring observations：
+- `<source field> -> <transform> -> <runtime consumer>` — <observed fact>
+
+Behavior claims and mechanisms：
+- `<claim>` — mechanism: `<runner/runtime path>` — evidence: `<artifact>`
+
 ## Evidence
 
 ### Handoff Contract Fingerprint
@@ -83,15 +94,17 @@ git diff --stat
 |---|---|
 | Contract marker count | <start/end count> |
 | Canonical status path | `docs/agent-collab/<change-id>/status.md` |
-| `schema_version` / `contract_revision` | `4` / `<n>` |
+| `schema_version` / `contract_revision` | `5` / `<n>` |
 | canonical SHA-256 | `<same value as Brief>` |
 | `change_id` | `<value>` |
 | `risk_profile` | compact / standard / strict |
 | `batch_profile` | single / cohesive / staged |
 | `current_batch` / `planned_batches` | `<n>/<n>` |
 | `attempt` / `lifecycle_state` | `<AA>` / `<state>` |
-| `executor_agent` / `agent_role` | `<identity>` / `executor` |
-| `independent_reviewer_agent` / `decision_owner` | `<identity>` / `codex` |
+| executor product / instance / role / profile | `<values>` |
+| reviewer product / instance / role / profile | `<values>` |
+| control plane product / instance / role / profile | `<values>` |
+| decision source / Confirmation Lease ID / status | `<values>` |
 | readonly fields changed | no / yes |
 
 如果 execution revision 或 canonical SHA-256 与 Brief 不一致，本 Report 只能

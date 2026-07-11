@@ -5,7 +5,7 @@
 
 <!-- COOP_EVIDENCE_MANIFEST_START -->
 ```yaml
-evidence_schema_version: 1
+evidence_schema_version: 2
 evidence_role: timeout-audit
 evidence_result: blocked
 change_id: <change-id>
@@ -13,15 +13,17 @@ current_batch: <NN>
 attempt: <AA>
 contract_revision: <audited canonical revision>
 canonical_sha256: <audited canonical SHA-256>
-agent_identity: codex
-agent_role: decision-owner
+agent_product: codex
+agent_instance_id: <canonical control-plane instance>
+agent_role: control-plane
+capability_profile: control-plane-high
 ```
 <!-- COOP_EVIDENCE_MANIFEST_END -->
 
 `timeout-audit` 只能是 `blocked`，不得用于 PASS/FAIL promotion。保存并
 计算 SHA-256 后不得改写 manifest 或正文。
 它是 Codex 治理审计而非 executor evidence，因此即使同一 artifact 同时
-占用 Report 与 Review 字段，身份/角色仍为 `codex` / `decision-owner`。
+占用 Report 与 Review 字段，身份/角色/profile 仍绑定 canonical control-plane assignment。
 
 ## 结论
 

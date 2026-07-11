@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-07-11
+
+### Changed
+- Upgrade new Handoffs and templates to schema 5/schema-2 evidence with bound
+  product, instance, role, capability profile, provenance, and Lease references.
+- Govern manually copied state-changing Briefs through the same canonical route.
+- Require High Review of actual diffs, copy/transform/production wiring,
+  claim-to-mechanism support, critical reruns, and an independent probe.
+- Keep executor PASS advisory and reject same-instance self-review even when the
+  executor and reviewer use the same product.
+
 ## [1.2.0] - 2026-07-11
 
 ### Changed
