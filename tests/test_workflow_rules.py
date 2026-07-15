@@ -1497,7 +1497,7 @@ class WorkflowRulesTest(unittest.TestCase):
             status.write_text(
                 "<!-- COOP_HANDOFF_CONTRACT_START -->\n```yaml\n"
                 "schema_version: 4\nchange_id: legacy\ncontract_revision: 2\n"
-                "lifecycle_state: ready-for-execution\n````\n"
+                "lifecycle_state: ready-for-execution\n```\n"
                 "<!-- COOP_HANDOFF_CONTRACT_END -->\n",
                 encoding="utf-8",
             )
