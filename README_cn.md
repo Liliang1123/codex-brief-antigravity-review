@@ -7,6 +7,7 @@
 ## 亮点
 
 - 独立编写或优化 task prompt、Brief、checklist，无需 OpenSpec/Handoff。
+- Standalone Review 必须由用户明确请求、仅作用于当前请求、采用 findings-first 输出，且生成变更后绝不自动串联触发。
 - 普通 diff/证据只读 Review 不伪造批次推进。
 - 将已批准实施计划转化为带 attempt 的批次 Brief。
 - 将编排与评审从具体实现执行中分离。
@@ -64,6 +65,35 @@ Handed-off：读取 canonical Handoff Contract
 -> 非最终 PASS：下一批
 -> 最终 PASS：回交 openspec-superpower-change 做最终验证
 ```
+
+明确请求的 standalone OpenSpec Review 保持简洁，并检查：
+
+- proposal 范围；
+- spec 场景；
+- design 决策与风险；
+- task 可追溯性；
+- 跨产物一致性。
+
+## 路由决策详解
+
+只有两条合法路线，一个请求不得在两者之间暗中漂移。
+
+### Standalone Lightweight
+
+仅在用户明确要求编写/优化 prompt、Brief、checklist，或只读 Review
+diff、Report、证据集、OpenSpec 产物时使用。它只返回本次请求的文案
+或 findings；不修改项目文件，不创建/变更 `status.md`，不派发实施批次，
+不推进 lifecycle，不决定最终完成，也不在产出产物后自动串联 Review。一旦
+请求包含修复 finding 或改变行为，必须返回 `openspec-superpower-change`。
+
+### Canonical Handoff
+
+仅在有效的 canonical Handoff Contract 已记录路由器审批、风险/证据等级、
+batch/attempt、owner 和当前 lifecycle 时使用。本 Skill 随后才可对当前 Brief
+执行 Preflight、派发绑定 executor、审计 attempt Report、绑定 Review 证据并
+记录 `PASS` / `FAIL` / `BLOCKED`。失败必须留在同一 batch 并使用新 attempt；
+非最终 PASS 可推进；最终批次 PASS 将 `awaiting-final-verification` 回交路由器。
+它不得冒充路由器审批，也不得把批次 PASS 改写为整个任务完成。
 
 ## 产物路径
 

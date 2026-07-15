@@ -1,6 +1,6 @@
 ---
 name: codex-brief-antigravity-review
-description: "Use for standalone non-state-changing Antigravity/Codex prompt or brief wording, read-only diff/report/evidence review that does not request fixes or decide final completion, or dispatch/review/resume of an external-agent batch with an existing valid Handoff Contract. Do not use for file edits, review-and-fix, final completion, or workflow/template changes. 可按用户要求用 caveman 风格压缩表达。"
+description: "Use for explicitly requested standalone non-state-changing Antigravity/Codex prompt or brief wording, and read-only diff/report/evidence review that does not request fixes or decide final completion; also use for dispatch/review/resume of an external-agent batch with an existing valid Handoff Contract. Do not use for file edits, review-and-fix, final completion, or workflow/template changes. 可按用户要求用 caveman 风格压缩表达。"
 ---
 
 # Codex Brief & Antigravity Review
@@ -36,6 +36,16 @@ to implementation.
   用户侧可读解释可再压缩，不得省略状态、文件、证据命名和哈希约束。
 
 ## Standalone Lightweight
+
+This route is request-scoped. Do not auto-chain it after producing an OpenSpec
+change or another artifact; use it only for the current explicit wording or
+read-only Review request.
+
+For OpenSpec artifacts, inspect proposal scope, spec scenarios,
+design decisions and risks, task traceability, and cross-artifact consistency.
+Default to findings-first output: scope/evidence, actionable findings, verdict,
+and next action. Omit governance narration unless it changes the result or next
+action.
 
 This path does not require an OpenSpec proposal, Handoff Contract, Superpowers
 plan, or collaboration artifact. Produce the requested prompt/Brief/checklist

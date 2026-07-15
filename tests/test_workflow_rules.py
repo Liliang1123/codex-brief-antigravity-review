@@ -162,11 +162,19 @@ class WorkflowRulesTest(unittest.TestCase):
     def setUpClass(cls):
         cls.validator = load_validator()
         cls.skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        cls.readme_cn = (ROOT / "README_cn.md").read_text(encoding="utf-8")
         cls.handoff = (ROOT / "references" / "handoff-contract.md").read_text(encoding="utf-8")
         cls.review = (ROOT / "references" / "review-template.md").read_text(encoding="utf-8")
 
     def test_description_targets_prompt_and_evidence_review(self):
-        description = self.skill.split("---", 2)[1]
+        description = " ".join(self.skill.split("---", 2)[1].split())
+        self.assertIn("explicitly requested standalone", description)
+        self.assertIn(
+            "also use for dispatch/review/resume of an external-agent batch "
+            "with an existing valid Handoff Contract",
+            description,
+        )
         for expected in (
             "non-state-changing", "read-only", "does not request fixes",
             "final completion", "valid Handoff Contract", "file edits",
@@ -180,6 +188,65 @@ class WorkflowRulesTest(unittest.TestCase):
         section = self.skill.split("## Standalone Lightweight", 1)[1].split("## ", 1)[0]
         self.assertIn("does not require", section)
         self.assertIn("Handoff Contract", section)
+
+    def test_standalone_review_is_request_scoped_and_not_auto_chained(self):
+        section = " ".join(
+            self.skill.split("## Standalone Lightweight", 1)[1]
+            .split("## ", 1)[0]
+            .split()
+        )
+        self.assertIn(
+            "This route is request-scoped. Do not auto-chain it after producing "
+            "an OpenSpec change or another artifact; use it only for the current "
+            "explicit wording or read-only Review request.",
+            section,
+        )
+
+    def test_standalone_openspec_review_is_brief_and_contract_complete(self):
+        section = " ".join(
+            self.skill.split("## Standalone Lightweight", 1)[1]
+            .split("## ", 1)[0]
+            .split()
+        )
+        self.assertIn(
+            "For OpenSpec artifacts, inspect proposal scope, spec scenarios, "
+            "design decisions and risks, task traceability, and cross-artifact "
+            "consistency.",
+            section,
+        )
+        self.assertIn(
+            "Default to findings-first output: scope/evidence, actionable "
+            "findings, verdict, and next action.",
+            section,
+        )
+        self.assertIn(
+            "Omit governance narration unless it changes the result or next action.",
+            section,
+        )
+
+    def test_readmes_make_standalone_review_explicit_and_request_scoped(self):
+        readme = " ".join(self.readme.split())
+        readme_cn = " ".join(self.readme_cn.split())
+        self.assertIn(
+            "Standalone Review requires an explicit user request, is "
+            "request-scoped and findings-first, and is never auto-chained after "
+            "change generation.",
+            readme,
+        )
+        self.assertIn(
+            "An explicitly requested standalone OpenSpec Review remains concise "
+            "and checks:",
+            readme,
+        )
+        self.assertIn(
+            "Standalone Review 必须由用户明确请求、仅作用于当前请求、采用 "
+            "findings-first 输出，且生成变更后绝不自动串联触发。",
+            readme_cn,
+        )
+        self.assertIn(
+            "明确请求的 standalone OpenSpec Review 保持简洁，并检查：",
+            readme_cn,
+        )
 
     def test_review_and_fix_returns_to_change_gate(self):
         self.assertIn("Review and fix", self.skill)

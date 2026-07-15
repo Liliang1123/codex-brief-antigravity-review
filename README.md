@@ -9,6 +9,7 @@ It is intended for workflows where Codex should design, dispatch, and audit work
 ## Highlights
 
 - Writes or refines standalone task prompts, briefs, and checklists without requiring OpenSpec or Handoff state.
+- Standalone Review requires an explicit user request, is request-scoped and findings-first, and is never auto-chained after change generation.
 - Reviews ordinary diffs and evidence read-only without pretending to promote a governed batch.
 - Converts approved implementation plans into attempt-specific batch briefs.
 - Separates orchestration and review from implementation execution.
@@ -68,6 +69,39 @@ Handed-off: read canonical Handoff Contract
 -> non-final PASS: next batch
 -> final PASS: return to openspec-superpower-change for final verification
 ```
+
+An explicitly requested standalone OpenSpec Review remains concise and checks:
+
+- proposal scope;
+- spec scenarios;
+- design decisions and risks;
+- task traceability; and
+- cross-artifact consistency.
+
+## Route Decision In Detail
+
+There are two valid routes; a request must not drift from one into the other.
+
+### Standalone Lightweight
+
+Use this route only when the user explicitly asks for prompt/Brief/checklist
+wording or a read-only Review of a diff, Report, evidence set, or OpenSpec
+artifact. It returns wording or findings for that request only. It does not edit
+project files, create or mutate `status.md`, dispatch an implementation batch,
+promote lifecycle state, decide final completion, or auto-chain another Review
+after producing an artifact. Any request to fix findings or change behavior
+returns to `openspec-superpower-change`.
+
+### Canonical Handoff
+
+Use this route only when a valid canonical Handoff Contract already records the
+router's approval, risk/evidence profile, batch/attempt, owners, and current
+lifecycle state. This skill may then Preflight the current Brief, dispatch the
+bound executor, audit the attempt Report, bind Review evidence, and record
+`PASS`, `FAIL`, or `BLOCKED`. A failure stays in the same batch with a new
+attempt; a non-final PASS may advance; a final batch PASS returns
+`awaiting-final-verification` to the router. It never impersonates router
+approval and never converts batch PASS into whole-task completion.
 
 ## Artifact Layout
 
