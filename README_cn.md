@@ -47,6 +47,31 @@
 
 Standalone 路径不得修改实现；handed-off 路径不得重新判断 OpenSpec 审批或风险分类。
 
+## Caveman 输出压缩模式
+
+Caveman 是表述与输出压缩层，不是治理层。只有用户显式要求 `caveman`、
+`少 token`、`更短` 或 `更精简` 时才会启用。基础模式支持 `lite`、`full` 和
+`ultra`；`stop caveman` 或 `正常模式` 会停止持续压缩。
+
+在本 companion Skill 中，Caveman 可以压缩 Standalone prompt/Brief/checklist
+文案、findings-first 摘要与面向用户的说明；技术术语、路径、命令、错误字符串及
+必填字段必须保持精确。Canonical Handoff 状态和受治理的 Brief、Report、Review
+产物继续使用标准模板。压缩不得删除 lifecycle 状态、artifact 路径、evidence
+role/result、实例绑定、revision 编号或 SHA-256 约束。批次推进和最终回交规则均
+保持不变。
+
+`caveman-commit`、`caveman-review` 和 `caveman-compress` 分别用于压缩 commit
+message、Review comment 与 memory 文件；它们不授予路由、审批、证据、生命周期、
+批次推进或完成决策权。
+
+```text
+caveman
+/caveman lite
+/caveman full
+/caveman ultra
+stop caveman
+```
+
 ## 工作流
 
 ```text

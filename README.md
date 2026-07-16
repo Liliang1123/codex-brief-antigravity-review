@@ -51,6 +51,35 @@ This skill creates a strict Brief -> Dispatch -> Report -> Review loop.
 
 Standalone use must not modify implementation. In handed-off use, Codex must not re-decide OpenSpec approval or risk classification.
 
+## Caveman Output Mode
+
+Caveman is a presentation and output-compression layer, not a governance
+layer. It activates only after an explicit request such as `caveman`,
+`少 token`, `更短`, or `更精简`. The base mode supports `lite`, `full`, and
+`ultra`; `stop caveman` or `正常模式` disables persistent compression.
+
+For this companion, Caveman may shorten Standalone prompt/Brief/checklist
+wording, findings-first summaries, and user-facing explanations. Technical
+terms, paths, commands, error strings, and required fields must remain exact.
+Canonical Handoff state and governed Brief, Report, and Review artifacts keep
+their standard templates. Compression must not remove lifecycle state,
+artifact paths, evidence roles or results, instance bindings, revision
+numbers, or SHA-256 constraints. Batch promotion and final handback rules
+remain unchanged.
+
+`caveman-commit`, `caveman-review`, and `caveman-compress` are specialized
+skills for commit messages, review comments, and memory files. They provide no
+routing, approval, evidence, lifecycle, batch-promotion, or completion
+authority.
+
+```text
+caveman
+/caveman lite
+/caveman full
+/caveman ultra
+stop caveman
+```
+
 ## Workflow
 
 ```text
