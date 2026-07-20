@@ -51,6 +51,10 @@ This skill creates a strict Brief -> Dispatch -> Report -> Review loop.
 
 Standalone use must not modify implementation. In handed-off use, Codex must not re-decide OpenSpec approval or risk classification.
 
+Handed-off execution loads its complete governor on demand from
+`references/handed-off-external-execution.md`; standalone work does not read
+that procedure.
+
 ## Workflow
 
 ```text
@@ -135,6 +139,7 @@ approval and never converts batch PASS into whole-task completion.
 │   ├── review-template.md
 │   ├── agy-dispatch-template.md
 │   ├── timeout-audit-template.md
+│   ├── handed-off-external-execution.md
 │   └── handoff-contract.md
 ├── scripts/
 │   └── validate_templates.py
@@ -149,6 +154,7 @@ approval and never converts batch PASS into whole-task completion.
 - `references/review-template.md`: PASS / FAIL / BLOCKED review contract.
 - `references/agy-dispatch-template.md`: dispatch prompt and command structure.
 - `references/timeout-audit-template.md`: timeout and missing-report audit format.
+- `references/handed-off-external-execution.md`: complete Handoff-only governor procedure.
 - `references/handoff-contract.md`: shared status contract between Codex and the external agent.
 
 ## Key Rules

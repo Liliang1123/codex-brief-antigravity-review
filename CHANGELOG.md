@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+### Changed
+- Keep route selection, standalone behavior, and shared authority/Git boundaries
+  in `SKILL.md`, while loading the complete external-batch governor on demand
+  from `references/handed-off-external-execution.md` only for valid Handoffs.
+- Preserve the migrated governor contract with a normalized content hash and
+  structural validation; no token reduction is claimed because Antigravity
+  reference-loading remains `UNKNOWN`.
+
 ## [1.4.0] - 2026-07-15
 
 ### Changed

@@ -1197,6 +1197,43 @@ def validate_reference_links(root: Path, skill: str) -> None:
             raise AssertionError(f"SKILL.md: linked reference missing: {link}")
 
 
+def validate_companion_entry(skill: str) -> None:
+    violations = []
+    for needle in (
+        "## Route Selection", "## Standalone Lightweight", "## Non-Negotiables",
+        "Never run `git add`, `git commit`, `git reset`, or `git clean`",
+        "When Handed-off External Execution is selected, read "
+        "`references/handed-off-external-execution.md` completely before any "
+        "batch action. Do not read it for Standalone Lightweight work.",
+    ):
+        if needle not in " ".join(skill.split()):
+            violations.append(f"missing {needle!r}")
+    for forbidden in (
+        "### Artifact Paths", "### State Machine", "## Evidence Profiles",
+    ):
+        if forbidden in skill:
+            violations.append(f"embedded handed-off detail {forbidden!r}")
+    if violations:
+        raise AssertionError("SKILL.md: " + "; ".join(violations))
+
+
+def validate_handoff_governor(governor: str) -> None:
+    normalized_bytes = (governor.rstrip() + "\n").encode("utf-8")
+    expected_hash = "3d4d0b25a0312c6f21d682044af2296a5a9541c8a7bade2bb382b4fcc8b02bf7"
+    if hashlib.sha256(normalized_bytes).hexdigest() != expected_hash:
+        raise AssertionError(
+            "handed-off-external-execution.md: migrated governor content hash drift"
+        )
+    for needle in (
+        "schema-version-5", "schema-4", "Artifact Paths", "State Machine",
+        "Evidence Profiles", "agent_instance_id", "Preflight Review",
+        "actual files and the complete diff", "claim-to-mechanism support",
+        "independent adversarial", "awaiting-final-verification", "needs-fix",
+        "same batch", "must be reviewed again", "without claiming task completion",
+    ):
+        require(governor, needle, "handed-off-external-execution.md")
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("root", nargs="?", default=".")
@@ -1225,6 +1262,10 @@ def main(argv: list[str] | None = None) -> int:
     metadata = yaml_load(read(root / "agents" / "openai.yaml"))
     handoff = read(root / "references" / "handoff-contract.md")
     validate_frontmatter(skill)
+    validate_reference_links(root, skill)
+    validate_companion_entry(skill)
+    governor = read(root / "references" / "handed-off-external-execution.md")
+    validate_handoff_governor(governor)
     interface = metadata.get("interface") if isinstance(metadata, dict) else None
     if not isinstance(interface, dict):
         raise AssertionError("agents/openai.yaml: missing interface mapping")
@@ -1279,11 +1320,16 @@ def main(argv: list[str] | None = None) -> int:
 
     for needle in (
         "Standalone Lightweight", "Handed-off External Execution",
-        "Review and fix", "attempt-<AA>", "same batch", "needs-fix",
-        "awaiting-final-verification", "openspec-superpower-change",
-        "temporary structured backup", "Major Self-Evolution", "Preflight Review",
+        "Review and fix", "openspec-superpower-change",
+        "temporary structured backup", "Major Self-Evolution",
     ):
         require(skill, needle, "SKILL.md")
+
+    for needle in (
+        "attempt-<AA>", "same batch", "needs-fix",
+        "awaiting-final-verification", "Preflight Review",
+    ):
+        require(governor, needle, "handed-off-external-execution.md")
 
     contract = extract_handoff_contract(handoff, "handoff-contract.md")
     validate_handoff_contract(contract, "handoff-contract.md")

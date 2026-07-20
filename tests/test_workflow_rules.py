@@ -165,6 +165,9 @@ class WorkflowRulesTest(unittest.TestCase):
         cls.readme = (ROOT / "README.md").read_text(encoding="utf-8")
         cls.readme_cn = (ROOT / "README_cn.md").read_text(encoding="utf-8")
         cls.handoff = (ROOT / "references" / "handoff-contract.md").read_text(encoding="utf-8")
+        cls.governor = (
+            ROOT / "references" / "handed-off-external-execution.md"
+        ).read_text(encoding="utf-8")
         cls.review = (ROOT / "references" / "review-template.md").read_text(encoding="utf-8")
 
     def test_description_targets_prompt_and_evidence_review(self):
@@ -188,6 +191,56 @@ class WorkflowRulesTest(unittest.TestCase):
         section = self.skill.split("## Standalone Lightweight", 1)[1].split("## ", 1)[0]
         self.assertIn("does not require", section)
         self.assertIn("Handoff Contract", section)
+
+    def test_thin_entry_routes_handoff_detail_to_reference(self):
+        self.assertIn("## Route Selection", self.skill)
+        self.assertIn("## Standalone Lightweight", self.skill)
+        self.assertIn("## Non-Negotiables", self.skill)
+        self.assertIn(
+            "Never run `git add`, `git commit`, `git reset`, or `git clean`",
+            self.skill,
+        )
+        normalized = " ".join(self.skill.split())
+        required_route_contract = (
+            "When Handed-off External Execution is selected, read "
+            "`references/handed-off-external-execution.md` completely before "
+            "any batch action. Do not read it for Standalone Lightweight work."
+        )
+        checks = {
+            "explicit route-scoped reference": (
+                required_route_contract in normalized
+            ),
+            "Artifact Paths moved out of entry": (
+                "### Artifact Paths" not in self.skill
+            ),
+            "State Machine moved out of entry": (
+                "### State Machine" not in self.skill
+            ),
+            "Evidence Profiles moved out of entry": (
+                "## Evidence Profiles" not in self.skill
+            ),
+        }
+        for label, condition in checks.items():
+            with self.subTest(label=label):
+                self.assertTrue(condition, label)
+
+    def test_handoff_governor_reference_preserves_complete_contract(self):
+        path = ROOT / "references" / "handed-off-external-execution.md"
+        self.assertTrue(path.is_file(), "Handoff governor reference missing")
+        governor = path.read_text(encoding="utf-8")
+        normalized_bytes = (governor.rstrip() + "\n").encode("utf-8")
+        self.assertEqual(
+            hashlib.sha256(normalized_bytes).hexdigest(),
+            "3d4d0b25a0312c6f21d682044af2296a5a9541c8a7bade2bb382b4fcc8b02bf7",
+        )
+        for needle in (
+            "schema-version-5", "schema-4", "Artifact Paths", "State Machine",
+            "Evidence Profiles", "agent_instance_id", "Preflight Review",
+            "actual files and the complete diff", "claim-to-mechanism support",
+            "independent adversarial", "awaiting-final-verification", "needs-fix",
+            "same batch", "must be reviewed again", "without claiming task completion",
+        ):
+            self.assertIn(needle, governor)
 
     def test_standalone_review_is_request_scoped_and_not_auto_chained(self):
         section = " ".join(
@@ -239,12 +292,23 @@ class WorkflowRulesTest(unittest.TestCase):
             readme,
         )
         self.assertIn(
+            "Handed-off execution loads its complete governor on demand from "
+            "`references/handed-off-external-execution.md`; standalone work does "
+            "not read that procedure.",
+            readme,
+        )
+        self.assertIn(
             "Standalone Review 必须由用户明确请求、仅作用于当前请求、采用 "
             "findings-first 输出，且生成变更后绝不自动串联触发。",
             readme_cn,
         )
         self.assertIn(
             "明确请求的 standalone OpenSpec Review 保持简洁，并检查：",
+            readme_cn,
+        )
+        self.assertIn(
+            "Handed-off 路径按需完整读取 "
+            "`references/handed-off-external-execution.md`；standalone 路径不读取该治理流程。",
             readme_cn,
         )
 
@@ -258,9 +322,9 @@ class WorkflowRulesTest(unittest.TestCase):
         self.assertIn("must not embed", self.handoff)
 
     def test_attempt_specific_artifacts_preserve_review_history(self):
-        self.assertIn("attempt-<AA>", self.skill)
-        self.assertIn("same batch", self.skill)
-        self.assertIn("needs-fix", self.skill)
+        self.assertIn("attempt-<AA>", self.governor)
+        self.assertIn("same batch", self.governor)
+        self.assertIn("needs-fix", self.governor)
 
     def test_fail_and_blocked_must_reenter_review(self):
         self.assertIn("FAIL", self.review)
@@ -272,7 +336,7 @@ class WorkflowRulesTest(unittest.TestCase):
         brief = (ROOT / "references" / "brief-template.md").read_text(encoding="utf-8")
         self.assertIn("结果：PASS / BLOCKED", brief)
         self.assertNotIn("结果：PASS / FAIL / BLOCKED", brief)
-        self.assertIn("Preflight uses only `PASS`/`BLOCKED`", self.skill)
+        self.assertIn("Preflight uses only `PASS`/`BLOCKED`", self.governor)
         self.assertIn("不能充当 `batch-review`", self.review)
 
     def test_complete_contract_requires_review_and_final_verification(self):
